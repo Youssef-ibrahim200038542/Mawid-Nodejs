@@ -1,1 +1,12 @@
-node_modules
+node_modules/
+.env
+.env.*
+!.env.example
+
+generated/
+# Editor AI skills
+.agents/
+.claude/
+.windsurf/
+
+skills-lock.json
