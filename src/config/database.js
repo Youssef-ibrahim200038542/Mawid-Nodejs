@@ -30,4 +30,13 @@ const prisma = new PrismaClient({
     adapter
 });
 
+const requiredDelegates = ['user', 'event', 'registration', 'session'];
+const missingDelegates = requiredDelegates.filter((delegate) => !prisma[delegate]);
+
+if (missingDelegates.length > 0) {
+    throw new Error(
+        `Generated Prisma Client is missing models: ${missingDelegates.join(', ')}. Run "npx prisma generate" and restart the app.`
+    );
+}
+
 module.exports = prisma;

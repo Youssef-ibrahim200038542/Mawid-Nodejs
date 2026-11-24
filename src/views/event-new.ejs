@@ -1,0 +1,29 @@
+<%- include("partials/header") %>
+
+<section style="max-width: 520px; margin: 30px auto; padding: 30px; background: white; border: 1px solid #e2e8f0; border-radius: 12px;">
+    <h1 style="color: #4f46e5;">Create an event</h1>
+    <% if (error) { %>
+        <p style="color: #dc2626; background: #fef2f2; padding: 12px; border-radius: 6px;"><%= error %></p>
+    <% } %>
+    <form action="/events" method="POST">
+        <div style="margin-bottom: 18px;">
+            <label for="title" style="display: block; margin-bottom: 7px;">Event name</label>
+            <input id="title" name="title" value="<%= values.title || "" %>" maxlength="200" required style="width: 100%; padding: 11px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px;">
+        </div>
+        <div style="margin-bottom: 18px;">
+            <label for="location" style="display: block; margin-bottom: 7px;">Location (optional)</label>
+            <input id="location" name="location" value="<%= values.location || "" %>" maxlength="255" style="width: 100%; padding: 11px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px;">
+        </div>
+        <div style="margin-bottom: 18px;">
+            <label for="startsAt" style="display: block; margin-bottom: 7px;">Date and time</label>
+            <input id="startsAt" name="startsAt" value="<%= values.startsAt || "" %>" type="datetime-local" required style="width: 100%; padding: 11px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px;">
+        </div>
+        <div style="margin-bottom: 24px;">
+            <label for="capacity" style="display: block; margin-bottom: 7px;">Capacity</label>
+            <input id="capacity" name="capacity" value="<%= values.capacity || "" %>" type="number" min="1" step="1" required style="width: 100%; padding: 11px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px;">
+        </div>
+        <button type="submit" style="width: 100%; padding: 12px; background: #4f46e5; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer;">Create event</button>
+    </form>
+</section>
+
+<%- include("partials/footer") %>

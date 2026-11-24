@@ -1,0 +1,86 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mawid</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+
+        nav {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 18px 40px;
+            background-color: white;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        nav a {
+            color: #334155;
+            text-decoration: none;
+            font-size: 15px;
+        }
+
+        nav a:first-child {
+            color: #4f46e5;
+            font-size: 21px;
+            font-weight: bold;
+            margin-right: auto;
+        }
+
+        nav a:hover {
+            color: #4f46e5;
+        }
+
+        nav form button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 6px;
+            background-color: #4f46e5;
+            color: white;
+            cursor: pointer;
+        }
+
+        nav form button:hover {
+            background-color: #4338ca;
+        }
+
+        main {
+            padding: 30px 40px;
+        }
+
+        @media (max-width: 600px) {
+            nav {
+                padding: 15px;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+
+            main {
+                padding: 20px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/">Mawid</a>
+        <% if (user) { %>
+        | <a href="/dashboard">My events</a>
+        <form action="/logout" method="POST" style="display:inline">
+            <button type="submit">Log out</button>
+        </form>
+        <% } else { %>
+        | <a href="/login">Log in</a> | <a href="/signup">Sign up</a>
+        <% } %>
+    </nav>
+    <hr>
+    <main>

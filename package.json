@@ -4,9 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-  "dev": "nodemon src/index.js",
+  "dev": "prisma generate && nodemon src/index.js",
   "migrate": "prisma migrate dev",
-  "start": "prisma migrate deploy && node src/index.js"
+  "start": "prisma generate && prisma migrate deploy && node src/index.js",
+  "test": "node --test",
+  "race": "node scripts/race.js"
 },
   "keywords": [],
   "type": "commonjs",

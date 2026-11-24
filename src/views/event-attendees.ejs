@@ -1,0 +1,35 @@
+<%- include("partials/header") %>
+
+<section style="max-width: 900px; margin: 20px auto;">
+    <a href="/dashboard" style="color: #4f46e5;">&larr; My events</a>
+    <h1><%= event.title %> attendees</h1>
+    <p><%= event.registrations.length %> / <%= event.capacity %> registered</p>
+    <p>Registration link: <a href="/events/<%= event.slug %>"><%= `${requestOrigin}/events/${event.slug}` %></a></p>
+
+    <% if (event.registrations.length === 0) { %>
+        <p style="padding: 24px; background: white; border: 1px solid #e2e8f0; border-radius: 8px;">No one has registered yet.</p>
+    <% } else { %>
+        <div style="overflow-x: auto; background: white; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                <thead>
+                    <tr style="background: #f8fafc;">
+                        <th style="padding: 12px;">Name</th>
+                        <th style="padding: 12px;">Email</th>
+                        <th style="padding: 12px;">Registered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% event.registrations.forEach((registration) => { %>
+                        <tr style="border-top: 1px solid #e2e8f0;">
+                            <td style="padding: 12px;"><%= registration.name %></td>
+                            <td style="padding: 12px;"><%= registration.email %></td>
+                            <td style="padding: 12px;"><%= registration.createdAt.toLocaleString() %></td>
+                        </tr>
+                    <% }) %>
+                </tbody>
+            </table>
+        </div>
+    <% } %>
+</section>
+
+<%- include("partials/footer") %>
