@@ -9,6 +9,9 @@ const specialtyRoutes = require("./modules/specialties/specialty.routes");
 const clinicServiceRoutes = require("./modules/clinic-services/clinic-service.routes");
 const doctorRoutes = require("./modules/doctors/doctor.routes");
 const scheduleRoutes = require("./modules/schedules/schedule.routes");
+const appointmentRoutes = require("./modules/appointments/appointment.routes");
+const patientRoutes = require("./modules/patients/patient.routes");
+const portalRoutes = require("./modules/appointments/portal.routes");
 
 // JSON REST API consumed by the React app. Mounted at /api/v1.
 const api = express.Router();
@@ -18,11 +21,12 @@ api.use(csrfProtection);
 
 api.use(authApiRoutes);
 api.use(clinicRoutes);
+api.use(portalRoutes);
 
 // Everything under /clinics/:clinicSlug/… runs inside the caller's tenant: the clinic is
 // resolved once from the slug + the user's active membership, and modules only see req.tenant.
 const tenantRouter = express.Router();
-tenantRouter.use(specialtyRoutes, clinicServiceRoutes, doctorRoutes, scheduleRoutes);
+tenantRouter.use(specialtyRoutes, clinicServiceRoutes, doctorRoutes, scheduleRoutes, appointmentRoutes, patientRoutes);
 api.use("/clinics/:clinicSlug", requireApiAuth, loadTenant, tenantRouter);
 
 api.use((req, res, next) => next(notFound()));

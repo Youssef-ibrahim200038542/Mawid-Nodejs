@@ -33,4 +33,33 @@ function assertMawidDatabase({ dbName, databaseUrl, expected = process.env.MAWID
     }
 }
 
-module.exports = { assertMawidDatabase, databaseNameFromUrl };
+// Prisma CLI commands that can write to a database's schema or data.
+const writingCommands = [
+    ["migrate", "deploy"],
+    ["migrate", "dev"],
+    ["migrate", "reset"],
+    ["migrate", "resolve"],
+    ["db", "push"],
+    ["db", "execute"],
+    ["db", "seed"],
+];
+
+// The production `mawid` database is frozen until the full rollout review: any writing Prisma
+// command against it is refused unless MAWID_ALLOW_PROD_MIGRATE=1 is set explicitly for that run.
+// Read-only commands (generate, validate, migrate status, migrate diff) stay allowed.
+function assertProductionWriteAllowed({ argv = process.argv, databaseUrl, allow = process.env.MAWID_ALLOW_PROD_MIGRATE }) {
+    if (databaseNameFromUrl(databaseUrl) !== "mawid") return;
+    const args = argv.slice(2).filter((arg) => !arg.startsWith("-"));
+    const isWriting = writingCommands.some(([group, action]) => {
+        const index = args.indexOf(group);
+        return index !== -1 && args[index + 1] === action;
+    });
+    if (isWriting && allow !== "1") {
+        throw new Error(
+            `Refusing "prisma ${args.join(" ")}" against the production "mawid" database: migrations are held until the rollout review. ` +
+                `Use mawid_test (npm run test:db:migrate), or set MAWID_ALLOW_PROD_MIGRATE=1 for an approved rollout.`
+        );
+    }
+}
+
+module.exports = { assertMawidDatabase, assertProductionWriteAllowed, databaseNameFromUrl, writingCommands };

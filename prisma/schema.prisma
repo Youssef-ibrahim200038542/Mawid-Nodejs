@@ -8,16 +8,17 @@ datasource db {
 }
 
 model User {
-  id           Int            @id @default(autoincrement())
-  name         String         @db.VarChar(100)
-  email        String         @unique @db.VarChar(255)
-  passwordHash String         @map("password_hash") @db.VarChar(255)
-  createdAt    DateTime       @default(now()) @map("created_at")
-  platformRole PlatformRole   @default(USER) @map("platform_role")
-  locale       String         @default("en") @db.VarChar(5)
-  events       Event[]
-  memberships  ClinicMember[]
-  auditLogs    AuditLog[]
+  id             Int            @id @default(autoincrement())
+  name           String         @db.VarChar(100)
+  email          String         @unique @db.VarChar(255)
+  passwordHash   String         @map("password_hash") @db.VarChar(255)
+  createdAt      DateTime       @default(now()) @map("created_at")
+  platformRole   PlatformRole   @default(USER) @map("platform_role")
+  locale         String         @default("en") @db.VarChar(5)
+  events         Event[]
+  memberships    ClinicMember[]
+  patientRecords Patient[]
+  auditLogs      AuditLog[]
 
   @@map("users")
 }
@@ -69,6 +70,8 @@ model Clinic {
   doctors            DoctorProfile[]
   workingHours       WorkingHours[]
   scheduleExceptions ScheduleException[]
+  patients           Patient[]
+  appointments       Appointment[]
 
   @@map("clinics")
 }
@@ -151,6 +154,7 @@ model Service {
   updatedAt       DateTime        @updatedAt @map("updated_at")
   clinic          Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   doctors         DoctorService[]
+  appointments    Appointment[]
 
   @@unique([clinicId, nameEn])
   @@unique([clinicId, nameAr])
@@ -179,6 +183,7 @@ model DoctorProfile {
   services           DoctorService[]
   workingHours       WorkingHours[]
   scheduleExceptions ScheduleException[]
+  appointments       Appointment[]
 
   @@unique([clinicId, memberId])
   @@unique([clinicId, id])
@@ -254,6 +259,84 @@ model ScheduleException {
   @@index([clinicId, startsAt])
   @@index([doctorId, startsAt])
   @@map("schedule_exceptions")
+}
+
+// ---------------------------------------------------------------------------
+// Appointments (Phase 4). Patients are clinic-scoped records; a patient may be
+// linked to a platform user account (online booking) or not (walk-in created by staff).
+// No medical data is stored here by design.
+// ---------------------------------------------------------------------------
+
+model Patient {
+  id           Int           @id @default(autoincrement())
+  clinicId     Int           @map("clinic_id")
+  userId       Int?          @map("user_id")
+  fullName     String        @map("full_name") @db.VarChar(150)
+  phone        String?       @db.VarChar(30)
+  email        String?       @db.VarChar(255)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  appointments Appointment[]
+
+  // One record per account per clinic; walk-ins (user_id NULL) are unrestricted.
+  @@unique([clinicId, userId])
+  @@unique([clinicId, id])
+  @@index([clinicId, phone])
+  @@index([clinicId, email])
+  @@index([userId])
+  @@map("patients")
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum AppointmentSource {
+  ONLINE
+  STAFF
+}
+
+model Appointment {
+  id                 Int               @id @default(autoincrement())
+  clinicId           Int               @map("clinic_id")
+  doctorId           Int               @map("doctor_id")
+  serviceId          Int               @map("service_id")
+  patientId          Int               @map("patient_id")
+  startsAt           DateTime          @map("starts_at")
+  endsAt             DateTime          @map("ends_at")
+  status             AppointmentStatus @default(PENDING)
+  source             AppointmentSource
+  // Snapshot of the service at booking time, so later price edits never change past bookings.
+  durationMinutes    Int               @map("duration_minutes")
+  priceMinor         Int               @map("price_minor")
+  currency           String            @db.VarChar(3)
+  // Administrative note only (e.g. "prefers Arabic"); never clinical information.
+  note               String?           @db.VarChar(500)
+  createdByUserId    Int?              @map("created_by_user_id")
+  confirmedAt        DateTime?         @map("confirmed_at")
+  cancelledAt        DateTime?         @map("cancelled_at")
+  cancelledByUserId  Int?              @map("cancelled_by_user_id")
+  cancellationReason String?           @map("cancellation_reason") @db.VarChar(255)
+  rescheduleCount    Int               @default(0) @map("reschedule_count")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  clinic             Clinic            @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctor             DoctorProfile     @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Restrict)
+  service            Service           @relation(fields: [clinicId, serviceId], references: [clinicId, id], onDelete: Restrict)
+  patient            Patient           @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict)
+
+  @@unique([clinicId, id])
+  @@index([doctorId, startsAt])
+  @@index([clinicId, startsAt])
+  @@index([patientId, startsAt])
+  @@index([clinicId, status, startsAt])
+  @@map("appointments")
 }
 
 model Event {

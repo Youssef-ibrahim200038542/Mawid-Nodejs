@@ -1,14 +1,24 @@
-const { rateLimit } = require("express-rate-limit");
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 
 // In-memory store: correct for a single process. A shared store (e.g. the DB or Redis)
 // is required before running more than one instance.
-function createLimiter({ windowMs, limit, skipSuccessfulRequests = false }) {
+// keyByUser: limit per logged-in user instead of per IP (many patients can share one IP,
+// e.g. an office or mobile-carrier NAT); anonymous requests still fall back to the IP.
+function createLimiter({ windowMs, limit, skipSuccessfulRequests = false, keyByUser = false }) {
     return rateLimit({
         windowMs,
         limit,
         skipSuccessfulRequests,
         standardHeaders: "draft-8",
         legacyHeaders: false,
+        ...(keyByUser
+            ? {
+                  keyGenerator(req) {
+                      const userId = req.session && req.session.user && req.session.user.id;
+                      return userId ? `user:${userId}` : `ip:${ipKeyGenerator(req.ip)}`;
+                  },
+              }
+            : {}),
         handler(req, res, next) {
             const error = new Error("Rate limit exceeded");
             error.status = 429;

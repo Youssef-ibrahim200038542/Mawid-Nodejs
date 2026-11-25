@@ -41,7 +41,8 @@ const prisma = new PrismaClient({
 
 const requiredDelegates = [
     'user', 'event', 'registration', 'session', 'clinic', 'clinicMember', 'auditLog',
-    'specialty', 'service', 'doctorProfile', 'doctorSpecialty', 'doctorService', 'workingHours', 'scheduleException'
+    'specialty', 'service', 'doctorProfile', 'doctorSpecialty', 'doctorService', 'workingHours', 'scheduleException',
+    'patient', 'appointment'
 ];
 const missingDelegates = requiredDelegates.filter((delegate) => !prisma[delegate]);
 

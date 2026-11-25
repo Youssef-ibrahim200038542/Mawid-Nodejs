@@ -19,6 +19,8 @@ async function resetTestData() {
         prisma.auditLog.deleteMany(),
         prisma.registration.deleteMany(),
         prisma.event.deleteMany(),
+        prisma.appointment.deleteMany(),
+        prisma.patient.deleteMany(),
         prisma.scheduleException.deleteMany(),
         prisma.workingHours.deleteMany(),
         prisma.doctorService.deleteMany(),

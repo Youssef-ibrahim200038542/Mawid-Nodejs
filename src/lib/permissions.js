@@ -4,21 +4,27 @@
 // enforced again inside the services.
 const readAll = ["clinic:read", "specialties:read", "services:read", "doctors:read", "schedule:read"];
 
+// Front-desk work shared by owners and receptionists.
+const frontDesk = ["appointments:read", "appointments:create", "appointments:manage", "patients:read", "patients:manage"];
+
 const rolePermissions = {
     OWNER: [
         ...readAll,
+        ...frontDesk,
         "clinic:update",
         "members:read",
         "members:manage",
         "audit:read",
+        "analytics:read",
         "specialties:manage",
         "services:manage",
         "doctors:manage",
         "schedule:manage",
     ],
-    // A doctor manages only their own working hours and exceptions.
-    DOCTOR: [...readAll, "schedule:manage_own"],
-    RECEPTIONIST: [...readAll],
+    // A doctor manages only their own schedule, sees only their own appointments (with the
+    // patient's contact details for those), and may confirm / complete / mark no-show on them.
+    DOCTOR: [...readAll, "schedule:manage_own", "appointments:read_own", "appointments:update_own"],
+    RECEPTIONIST: [...readAll, ...frontDesk],
 };
 
 const permissionSets = Object.fromEntries(
