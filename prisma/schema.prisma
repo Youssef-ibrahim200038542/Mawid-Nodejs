@@ -18,6 +18,7 @@ model User {
   events         Event[]
   memberships    ClinicMember[]
   patientRecords Patient[]
+  notifications  Notification[]
   auditLogs      AuditLog[]
 
   @@map("users")
@@ -71,6 +72,7 @@ model Clinic {
   workingHours       WorkingHours[]
   scheduleExceptions ScheduleException[]
   patients           Patient[]
+  notifications      Notification[]
   appointments       Appointment[]
 
   @@map("clinics")
@@ -330,6 +332,7 @@ model Appointment {
   doctor             DoctorProfile     @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Restrict)
   service            Service           @relation(fields: [clinicId, serviceId], references: [clinicId, id], onDelete: Restrict)
   patient            Patient           @relation(fields: [clinicId, patientId], references: [clinicId, id], onDelete: Restrict)
+  notifications      Notification[]
 
   @@unique([clinicId, id])
   @@index([doctorId, startsAt])
@@ -337,6 +340,48 @@ model Appointment {
   @@index([patientId, startsAt])
   @@index([clinicId, status, startsAt])
   @@map("appointments")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (in-app first; email is a pluggable delivery channel).
+// The payload carries ids and names, and the frontend renders localized text (en/ar) from `type`.
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  APPOINTMENT_BOOKED
+  APPOINTMENT_CONFIRMED
+  APPOINTMENT_CANCELLED
+  APPOINTMENT_RESCHEDULED
+  APPOINTMENT_REMINDER
+}
+
+enum EmailDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model Notification {
+  id            Int                 @id @default(autoincrement())
+  userId        Int                 @map("user_id")
+  clinicId      Int?                @map("clinic_id")
+  appointmentId Int?                @map("appointment_id")
+  type          NotificationType
+  payload       Json
+  readAt        DateTime?           @map("read_at")
+  emailStatus   EmailDeliveryStatus @default(PENDING) @map("email_status")
+  emailError    String?             @map("email_error") @db.VarChar(255)
+  // Makes scheduled jobs (reminders) idempotent: the same key is never notified twice.
+  dedupeKey     String?             @unique @map("dedupe_key") @db.VarChar(120)
+  createdAt     DateTime            @default(now()) @map("created_at")
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinic        Clinic?             @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  appointment   Appointment?        @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt, createdAt])
+  @@index([emailStatus, createdAt])
+  @@map("notifications")
 }
 
 model Event {

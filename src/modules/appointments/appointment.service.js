@@ -9,6 +9,7 @@ const policy = require("./booking-policy");
 const engine = require("./booking-engine");
 const { assertTransition } = require("./appointment-status");
 const { appointmentSelect, presentAppointment } = require("./appointment.presenter");
+const { notifyAppointmentEvent, scheduleEmailDelivery } = require("../notifications/notification.service");
 
 const maxListRangeDays = 92;
 
@@ -130,8 +131,10 @@ async function createStaffAppointment(tenant, { input, ipAddress, now = new Date
             metadata: { doctorId: input.doctorId, serviceId: service.id, patientId, startsAt: startsAt.toISOString(), source: "STAFF" },
             ipAddress,
         });
+        await notifyAppointmentEvent(tx, { appointmentId: created.id, event: "booked", actor: "staff", actorUserId: tenant.userId });
         return created;
     });
+    scheduleEmailDelivery();
     return presentAppointment(row, clinic.timezone);
 }
 
@@ -171,8 +174,11 @@ async function changeStatus(tenant, appointmentId, action, { reason = null, ipAd
             metadata: { from: current.status, to: status, ...(reason ? { reason } : {}) },
             ipAddress,
         });
+        const event = { CONFIRMED: "confirmed", CANCELLED: "cancelled" }[status];
+        if (event) await notifyAppointmentEvent(tx, { appointmentId, event, actor: "staff", actorUserId: tenant.userId });
         return updated;
     });
+    scheduleEmailDelivery();
     return presentAppointment(row, tenant.timezone);
 }
 
@@ -226,8 +232,9 @@ async function rescheduleAppointment({ clinic, appointmentId, startsAtInput, doc
             },
             ipAddress,
         });
+        await notifyAppointmentEvent(tx, { appointmentId, event: "rescheduled", actor: online ? "patient" : "staff", actorUserId });
         return updated;
-    });
+    }).finally(scheduleEmailDelivery);
 }
 
 async function rescheduleByStaff(tenant, appointmentId, { input, ipAddress, now = new Date() }) {

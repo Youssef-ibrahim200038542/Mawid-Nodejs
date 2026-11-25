@@ -157,4 +157,8 @@ module.exports = {
     showLogin,
     login,
     logout,
+    // Shared with the JSON auth API (src/modules/auth).
+    establishSession,
+    dummyPasswordHash,
+    bcryptMaxBytes,
 };

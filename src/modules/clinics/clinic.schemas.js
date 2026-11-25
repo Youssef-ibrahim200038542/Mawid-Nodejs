@@ -69,3 +69,16 @@ const paginationSchema = z.strictObject({
 });
 
 module.exports = { createClinicSchema, updateClinicSchema, paginationSchema, reservedSlugs };
+
+// Staff membership. v1 adds people who already have a Mawid account (no email invitations yet).
+const memberRole = z.enum(["OWNER", "DOCTOR", "RECEPTIONIST"]);
+const addMemberSchema = z.strictObject({
+    email: z.email().max(255).transform((value) => value.trim().toLowerCase()),
+    role: memberRole,
+});
+const updateMemberSchema = z
+    .strictObject({ role: memberRole.optional(), status: z.enum(["ACTIVE", "DISABLED"]).optional() })
+    .refine((value) => Object.keys(value).length > 0, "Send at least one field to update.");
+
+module.exports.addMemberSchema = addMemberSchema;
+module.exports.updateMemberSchema = updateMemberSchema;

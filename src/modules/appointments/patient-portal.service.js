@@ -11,6 +11,7 @@ const { appointmentSelect, presentAppointment } = require("./appointment.present
 const { rescheduleAppointment } = require("./appointment.service");
 const { ensurePatientForUser } = require("../patients/patient.service");
 const { resolvePublicClinic } = require("./public.service");
+const { notifyAppointmentEvent, scheduleEmailDelivery } = require("../notifications/notification.service");
 
 async function loadUser(userId) {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true } });
@@ -64,8 +65,10 @@ async function bookOnline(userId, clinicSlug, { input, ipAddress, now = new Date
             metadata: { doctorId: input.doctorId, serviceId: service.id, patientId: patient.id, startsAt: startsAt.toISOString(), source: "ONLINE" },
             ipAddress,
         });
+        await notifyAppointmentEvent(tx, { appointmentId: created.id, event: "booked", actor: "patient", actorUserId: user.id });
         return created;
     });
+    scheduleEmailDelivery();
     return presentAppointment(row, clinic.timezone, { clinic: { slug: clinic.slug, name: clinic.name } });
 }
 
@@ -132,8 +135,10 @@ async function cancelMine(userId, appointmentId, { reason, ipAddress, now = new 
             metadata: { from: fresh.status, to: "CANCELLED", by: "patient" },
             ipAddress,
         });
+        await notifyAppointmentEvent(tx, { appointmentId, event: "cancelled", actor: "patient", actorUserId: userId });
         return { updated, clinic: current.clinic };
     });
+    scheduleEmailDelivery();
     return presentAppointment(row.updated, row.clinic.timezone, { includePatient: false, clinic: { slug: row.clinic.slug, name: row.clinic.name } });
 }
 
