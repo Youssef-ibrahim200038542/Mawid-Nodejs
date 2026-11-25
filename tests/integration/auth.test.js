@@ -11,8 +11,11 @@ test.before(async () => {
 });
 
 test.after(async () => {
-    await resetTestData();
-    await stopServer(server);
+    try {
+        await resetTestData();
+    } finally {
+        await stopServer(server);
+    }
 });
 
 test("signup creates the user, hashes the password and starts a session", async () => {

@@ -48,4 +48,15 @@ function requirePermission(permission) {
     };
 }
 
-module.exports = { loadTenant, requirePermission };
+// Passes if the member has at least one of the permissions. Used where the service then applies
+// an ownership rule (e.g. "schedule:manage" or "schedule:manage_own" for the doctor's own profile).
+function requireAnyPermission(...permissions) {
+    return function checkAnyPermission(req, res, next) {
+        if (!req.tenant || !permissions.some((permission) => hasPermission(req.tenant.role, permission))) {
+            return next(forbidden());
+        }
+        next();
+    };
+}
+
+module.exports = { loadTenant, requirePermission, requireAnyPermission };

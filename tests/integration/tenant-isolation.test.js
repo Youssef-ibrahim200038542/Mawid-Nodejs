@@ -40,8 +40,11 @@ test.before(async () => {
 });
 
 test.after(async () => {
-    await resetTestData();
-    await stopServer(server);
+    try {
+        await resetTestData();
+    } finally {
+        await stopServer(server);
+    }
 });
 
 test("owner of clinic B cannot read, update or list members of clinic A", async () => {

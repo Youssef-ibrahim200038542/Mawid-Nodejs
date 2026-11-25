@@ -11,8 +11,11 @@ test.before(async () => {
 });
 
 test.after(async () => {
-    await resetTestData();
-    await stopServer(server);
+    try {
+        await resetTestData();
+    } finally {
+        await stopServer(server);
+    }
 });
 
 // Proves the row-lock pattern (SELECT … FOR UPDATE inside a transaction) that the appointment

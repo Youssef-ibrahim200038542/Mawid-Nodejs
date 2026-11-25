@@ -19,6 +19,13 @@ async function resetTestData() {
         prisma.auditLog.deleteMany(),
         prisma.registration.deleteMany(),
         prisma.event.deleteMany(),
+        prisma.scheduleException.deleteMany(),
+        prisma.workingHours.deleteMany(),
+        prisma.doctorService.deleteMany(),
+        prisma.doctorSpecialty.deleteMany(),
+        prisma.doctorProfile.deleteMany(),
+        prisma.service.deleteMany(),
+        prisma.specialty.deleteMany(),
         prisma.clinicMember.deleteMany(),
         prisma.clinic.deleteMany(),
         prisma.session.deleteMany(),
@@ -106,6 +113,7 @@ function createClient(baseUrl) {
         get: (url, options) => request("GET", url, options),
         post: (url, options) => request("POST", url, options),
         patch: (url, options) => request("PATCH", url, options),
+        put: (url, options) => request("PUT", url, options),
         async refreshCsrf() {
             csrfToken = (await request("GET", "/api/v1/auth/csrf")).data.csrfToken;
             return csrfToken;

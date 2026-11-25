@@ -50,35 +50,41 @@ enum MemberStatus {
 }
 
 model Clinic {
-  id            Int            @id @default(autoincrement())
-  slug          String         @unique @db.VarChar(80)
-  name          String         @db.VarChar(150)
-  timezone      String         @default("Africa/Cairo") @db.VarChar(64)
-  defaultLocale String         @default("en") @map("default_locale") @db.VarChar(5)
-  status        ClinicStatus   @default(ACTIVE)
-  phone         String?        @db.VarChar(30)
-  email         String?        @db.VarChar(255)
-  address       String?        @db.VarChar(255)
-  city          String?        @db.VarChar(100)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-  members       ClinicMember[]
-  auditLogs     AuditLog[]
+  id                 Int                 @id @default(autoincrement())
+  slug               String              @unique @db.VarChar(80)
+  name               String              @db.VarChar(150)
+  timezone           String              @default("Africa/Cairo") @db.VarChar(64)
+  defaultLocale      String              @default("en") @map("default_locale") @db.VarChar(5)
+  status             ClinicStatus        @default(ACTIVE)
+  phone              String?             @db.VarChar(30)
+  email              String?             @db.VarChar(255)
+  address            String?             @db.VarChar(255)
+  city               String?             @db.VarChar(100)
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  members            ClinicMember[]
+  auditLogs          AuditLog[]
+  specialties        Specialty[]
+  services           Service[]
+  doctors            DoctorProfile[]
+  workingHours       WorkingHours[]
+  scheduleExceptions ScheduleException[]
 
   @@map("clinics")
 }
 
 model ClinicMember {
-  id        Int          @id @default(autoincrement())
-  clinicId  Int          @map("clinic_id")
-  userId    Int          @map("user_id")
-  role      ClinicRole
-  status    MemberStatus @default(ACTIVE)
-  createdAt DateTime     @default(now()) @map("created_at")
-  updatedAt DateTime     @updatedAt @map("updated_at")
+  id            Int            @id @default(autoincrement())
+  clinicId      Int            @map("clinic_id")
+  userId        Int            @map("user_id")
+  role          ClinicRole
+  status        MemberStatus   @default(ACTIVE)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
   // Restrict: deleting a clinic or user must never silently cascade through tenant data.
-  clinic    Clinic       @relation(fields: [clinicId], references: [id], onDelete: Restrict)
-  user      User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  clinic        Clinic         @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  doctorProfile DoctorProfile?
 
   @@unique([clinicId, userId])
   // Target for composite foreign keys (clinic_id, member_id) so child rows cannot cross tenants.
@@ -103,6 +109,151 @@ model AuditLog {
   @@index([clinicId, createdAt])
   @@index([actorUserId, createdAt])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Clinic operations (Phase 3). Every table carries clinic_id, and every link
+// between tenant rows uses a composite foreign key (clinic_id, <id>) so the
+// database itself rejects a doctor, specialty or service from another clinic.
+// ---------------------------------------------------------------------------
+
+model Specialty {
+  id        Int               @id @default(autoincrement())
+  clinicId  Int               @map("clinic_id")
+  nameEn    String            @map("name_en") @db.VarChar(100)
+  nameAr    String?           @map("name_ar") @db.VarChar(100)
+  isActive  Boolean           @default(true) @map("is_active")
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+  clinic    Clinic            @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctors   DoctorSpecialty[]
+
+  // Collation is case-insensitive, so "Dentistry" and "dentistry" collide too.
+  @@unique([clinicId, nameEn])
+  @@unique([clinicId, nameAr])
+  @@unique([clinicId, id])
+  @@map("specialties")
+}
+
+model Service {
+  id              Int             @id @default(autoincrement())
+  clinicId        Int             @map("clinic_id")
+  nameEn          String          @map("name_en") @db.VarChar(150)
+  nameAr          String?         @map("name_ar") @db.VarChar(150)
+  descriptionEn   String?         @map("description_en") @db.Text
+  descriptionAr   String?         @map("description_ar") @db.Text
+  durationMinutes Int             @map("duration_minutes")
+  // Money as integer minor units (piasters for EGP) — never floats.
+  priceMinor      Int             @map("price_minor")
+  currency        String          @default("EGP") @db.VarChar(3)
+  isActive        Boolean         @default(true) @map("is_active")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  clinic          Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctors         DoctorService[]
+
+  @@unique([clinicId, nameEn])
+  @@unique([clinicId, nameAr])
+  @@unique([clinicId, id])
+  @@map("services")
+}
+
+model DoctorProfile {
+  id                 Int                 @id @default(autoincrement())
+  clinicId           Int                 @map("clinic_id")
+  memberId           Int                 @unique @map("member_id")
+  displayNameEn      String              @map("display_name_en") @db.VarChar(150)
+  displayNameAr      String?             @map("display_name_ar") @db.VarChar(150)
+  titleEn            String?             @map("title_en") @db.VarChar(100)
+  titleAr            String?             @map("title_ar") @db.VarChar(100)
+  bioEn              String?             @map("bio_en") @db.Text
+  bioAr              String?             @map("bio_ar") @db.Text
+  yearsOfExperience  Int?                @map("years_of_experience")
+  licenseNumber      String?             @map("license_number") @db.VarChar(64)
+  isActive           Boolean             @default(true) @map("is_active")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  clinic             Clinic              @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  member             ClinicMember        @relation(fields: [clinicId, memberId], references: [clinicId, id], onDelete: Restrict)
+  specialties        DoctorSpecialty[]
+  services           DoctorService[]
+  workingHours       WorkingHours[]
+  scheduleExceptions ScheduleException[]
+
+  @@unique([clinicId, memberId])
+  @@unique([clinicId, id])
+  @@map("doctor_profiles")
+}
+
+model DoctorSpecialty {
+  clinicId    Int           @map("clinic_id")
+  doctorId    Int           @map("doctor_id")
+  specialtyId Int           @map("specialty_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  doctor      DoctorProfile @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Cascade)
+  specialty   Specialty     @relation(fields: [clinicId, specialtyId], references: [clinicId, id], onDelete: Cascade)
+
+  @@id([doctorId, specialtyId])
+  @@index([clinicId, specialtyId])
+  @@map("doctor_specialties")
+}
+
+model DoctorService {
+  clinicId  Int           @map("clinic_id")
+  doctorId  Int           @map("doctor_id")
+  serviceId Int           @map("service_id")
+  createdAt DateTime      @default(now()) @map("created_at")
+  doctor    DoctorProfile @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Cascade)
+  service   Service       @relation(fields: [clinicId, serviceId], references: [clinicId, id], onDelete: Cascade)
+
+  @@id([doctorId, serviceId])
+  @@index([clinicId, serviceId])
+  @@map("doctor_services")
+}
+
+// Weekly recurring hours as wall-clock minutes in the clinic's IANA timezone, so a
+// DST change never shifts "09:00". doctor_id NULL = the clinic's own opening hours.
+// Breaks are gaps between intervals on the same weekday (09:00–13:00, 14:00–18:00).
+model WorkingHours {
+  id          Int            @id @default(autoincrement())
+  clinicId    Int            @map("clinic_id")
+  doctorId    Int?           @map("doctor_id")
+  // ISO weekday: 1 = Monday … 7 = Sunday.
+  weekday     Int            @db.TinyInt
+  startMinute Int            @map("start_minute") @db.SmallInt
+  endMinute   Int            @map("end_minute") @db.SmallInt
+  createdAt   DateTime       @default(now()) @map("created_at")
+  clinic      Clinic         @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctor      DoctorProfile? @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Cascade)
+
+  @@index([clinicId, doctorId, weekday])
+  @@map("working_hours")
+}
+
+enum ScheduleExceptionKind {
+  HOLIDAY
+  LEAVE
+  UNAVAILABLE
+}
+
+// A period when the clinic (doctor_id NULL) or one doctor cannot take appointments.
+// Absolute instants, stored in UTC.
+model ScheduleException {
+  id              Int                   @id @default(autoincrement())
+  clinicId        Int                   @map("clinic_id")
+  doctorId        Int?                  @map("doctor_id")
+  kind            ScheduleExceptionKind
+  startsAt        DateTime              @map("starts_at")
+  endsAt          DateTime              @map("ends_at")
+  reason          String?               @db.VarChar(255)
+  createdByUserId Int?                  @map("created_by_user_id")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  clinic          Clinic                @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  doctor          DoctorProfile?        @relation(fields: [clinicId, doctorId], references: [clinicId, id], onDelete: Cascade)
+
+  @@index([clinicId, startsAt])
+  @@index([doctorId, startsAt])
+  @@map("schedule_exceptions")
 }
 
 model Event {

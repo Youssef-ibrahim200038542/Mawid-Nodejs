@@ -1,17 +1,24 @@
 // Static role → permission map for clinic members. Checked on the backend only;
 // the frontend may mirror it for display, never for security.
-// Ownership-dependent rules (e.g. a doctor only sees their own appointments) are
+// Ownership-dependent rules (e.g. a doctor may only edit their own schedule) are
 // enforced again inside the services.
+const readAll = ["clinic:read", "specialties:read", "services:read", "doctors:read", "schedule:read"];
+
 const rolePermissions = {
     OWNER: [
-        "clinic:read",
+        ...readAll,
         "clinic:update",
         "members:read",
         "members:manage",
         "audit:read",
+        "specialties:manage",
+        "services:manage",
+        "doctors:manage",
+        "schedule:manage",
     ],
-    DOCTOR: ["clinic:read"],
-    RECEPTIONIST: ["clinic:read"],
+    // A doctor manages only their own working hours and exceptions.
+    DOCTOR: [...readAll, "schedule:manage_own"],
+    RECEPTIONIST: [...readAll],
 };
 
 const permissionSets = Object.fromEntries(
