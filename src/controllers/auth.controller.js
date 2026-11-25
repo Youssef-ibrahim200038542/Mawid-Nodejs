@@ -1,5 +1,6 @@
 const bcrypt = require("bcrypt");
 const User = require("../models/user.model");
+const { issueCsrfToken } = require("../middleware/csrf");
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const bcryptMaxBytes = 72;
@@ -56,6 +57,8 @@ function establishSession(req, user) {
             }
 
             req.session.user = { id: user.id, name: user.name };
+            // Fresh CSRF token for the new session, written in the same save as the user.
+            issueCsrfToken(req);
             req.session.save((saveError) => {
                 if (saveError) {
                     return reject(saveError);

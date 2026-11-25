@@ -16,9 +16,13 @@ if (
 const store = new PrismaSessionStore(prisma, {
     checkPeriod: 10 * 60 * 1000,
     dbRecordIdIsSessionId: true,
+    // By default the store silently DROPS a set() while another set() for the same session is
+    // still running (e.g. login saves twice). That lost CSRF tokens written right after login.
+    // Concurrent updates of an existing row are safe: last write wins.
+    enableConcurrentSetInvocationsForSameSessionID: true,
 });
 
-module.exports = session({
+const sessionMiddleware = session({
     secret: sessionSecret,
     store,
     resave: false,
@@ -30,3 +34,8 @@ module.exports = session({
         maxAge: 7 * 24 * 60 * 60 * 1000,
     },
 });
+
+// Exposed so tests and shutdown code can stop the expiry timer.
+sessionMiddleware.store = store;
+
+module.exports = sessionMiddleware;

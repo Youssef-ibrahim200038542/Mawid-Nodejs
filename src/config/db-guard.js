@@ -1,5 +1,7 @@
 // The local MariaDB server is shared with other projects (e.g. DriveX on `car_rental`).
 // Mawid must only ever connect to, migrate or query its own databases: `mawid` or `mawid_<suffix>`.
+// When MAWID_EXPECT_DB is set (the integration-test harness sets it to `mawid_test`), the
+// configured database must be exactly that name — so tests can never fall back to `mawid`.
 const allowedDatabaseName = /^mawid(_[a-z0-9]+)?$/;
 
 function databaseNameFromUrl(url) {
@@ -10,7 +12,7 @@ function databaseNameFromUrl(url) {
     }
 }
 
-function assertMawidDatabase({ dbName, databaseUrl }) {
+function assertMawidDatabase({ dbName, databaseUrl, expected = process.env.MAWID_EXPECT_DB }) {
     const names = [];
     if (dbName !== undefined) names.push(["DB_NAME", dbName]);
     if (databaseUrl !== undefined) names.push(["DATABASE_URL", databaseNameFromUrl(databaseUrl)]);
@@ -20,6 +22,9 @@ function assertMawidDatabase({ dbName, databaseUrl }) {
             throw new Error(
                 `${source} points at database "${name}". Mawid may only use "mawid" or "mawid_<suffix>" databases; refusing to continue.`
             );
+        }
+        if (expected && name !== expected) {
+            throw new Error(`${source} points at "${name}" but this run is pinned to "${expected}"; refusing to continue.`);
         }
     }
 
