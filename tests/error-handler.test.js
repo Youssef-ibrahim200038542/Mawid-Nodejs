@@ -5,7 +5,7 @@ const errorHandler = require("../src/middleware/error-handler");
 const silentLog = { error() {}, warn() {} };
 
 function makeRequest({ path = "/dashboard", accepts = "html" } = {}) {
-    return { path, log: silentLog, accepts: () => accepts };
+    return { path, originalUrl: path, log: silentLog, accepts: () => accepts };
 }
 
 function makeResponse() {

@@ -8,14 +8,101 @@ datasource db {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  name         String   @db.VarChar(100)
-  email        String   @unique @db.VarChar(255)
-  passwordHash String   @map("password_hash") @db.VarChar(255)
-  createdAt    DateTime @default(now()) @map("created_at")
+  id           Int            @id @default(autoincrement())
+  name         String         @db.VarChar(100)
+  email        String         @unique @db.VarChar(255)
+  passwordHash String         @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  platformRole PlatformRole   @default(USER) @map("platform_role")
+  locale       String         @default("en") @db.VarChar(5)
   events       Event[]
+  memberships  ClinicMember[]
+  auditLogs    AuditLog[]
 
   @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Clinic tenancy. Every tenant-owned table carries clinic_id.
+// ---------------------------------------------------------------------------
+
+enum PlatformRole {
+  USER
+  SUPER_ADMIN
+}
+
+enum ClinicStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+// Management role inside one clinic. Being bookable as a doctor is a separate
+// DoctorProfile (Phase 3), so an OWNER can also practise as a doctor.
+enum ClinicRole {
+  OWNER
+  DOCTOR
+  RECEPTIONIST
+}
+
+enum MemberStatus {
+  ACTIVE
+  DISABLED
+}
+
+model Clinic {
+  id            Int            @id @default(autoincrement())
+  slug          String         @unique @db.VarChar(80)
+  name          String         @db.VarChar(150)
+  timezone      String         @default("Africa/Cairo") @db.VarChar(64)
+  defaultLocale String         @default("en") @map("default_locale") @db.VarChar(5)
+  status        ClinicStatus   @default(ACTIVE)
+  phone         String?        @db.VarChar(30)
+  email         String?        @db.VarChar(255)
+  address       String?        @db.VarChar(255)
+  city          String?        @db.VarChar(100)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  members       ClinicMember[]
+  auditLogs     AuditLog[]
+
+  @@map("clinics")
+}
+
+model ClinicMember {
+  id        Int          @id @default(autoincrement())
+  clinicId  Int          @map("clinic_id")
+  userId    Int          @map("user_id")
+  role      ClinicRole
+  status    MemberStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  // Restrict: deleting a clinic or user must never silently cascade through tenant data.
+  clinic    Clinic       @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([clinicId, userId])
+  // Target for composite foreign keys (clinic_id, member_id) so child rows cannot cross tenants.
+  @@unique([clinicId, id])
+  @@index([userId])
+  @@map("clinic_members")
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  actorUserId Int?     @map("actor_user_id")
+  clinicId    Int?     @map("clinic_id")
+  action      String   @db.VarChar(80)
+  targetType  String?  @map("target_type") @db.VarChar(50)
+  targetId    String?  @map("target_id") @db.VarChar(64)
+  metadata    Json?
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  createdAt   DateTime @default(now()) @map("created_at")
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  clinic      Clinic?  @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+
+  @@index([clinicId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("audit_logs")
 }
 
 model Event {

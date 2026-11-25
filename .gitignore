@@ -10,3 +10,6 @@ generated/
 .windsurf/
 
 skills-lock.json
+
+# Local database backups (contain password hashes and sessions)
+backups/

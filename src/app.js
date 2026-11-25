@@ -5,6 +5,7 @@ const pinoHttp = require("pino-http");
 const logger = require("./lib/logger");
 const sessionMiddleware = require("./session");
 const errorHandler = require("./middleware/error-handler");
+const api = require("./api");
 const authRoutes = require("./routes/auth.routes");
 const eventRoutes = require("./routes/event.routes");
 
@@ -31,6 +32,8 @@ app.use((req, res, next) => {
     res.locals.values = {};
     next();
 });
+
+app.use("/api/v1", api);
 
 app.get("/", (req, res) => {
     res.render("home");

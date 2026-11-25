@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
   "dev": "prisma generate && nodemon src/index.js",
-  "migrate": "prisma migrate dev",
+  "migrate": "prisma migrate deploy",
+  "migrate:status": "prisma migrate status",
+  "migrate:diff": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script",
   "start": "prisma generate && prisma migrate deploy && node src/index.js",
   "test": "node --test",
   "race": "node scripts/race.js"

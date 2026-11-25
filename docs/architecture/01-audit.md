@@ -132,7 +132,7 @@ Rules for every module: **route → controller (HTTP only) → service (business
 | `notifications` | `user_id`, `clinic_id`, `type`, `payload` JSON, `read_at` | channel-agnostic; email is a delivery adapter |
 | `audit_logs` | `actor_user_id`, `clinic_id` nullable, `action`, `target_type`, `target_id`, `metadata` JSON, `ip` | append-only |
 
-`events` and `registrations` stay untouched until a decision is made about the legacy event feature (see open decisions).
+`events` and `registrations` stay untouched — see 3.2 for how they coexist with clinics.
 
 ### Booking concurrency (MariaDB 10.4 has no exclusion constraints)
 
@@ -149,12 +149,42 @@ Different doctors never block each other. Covered by a concurrency test that fir
 
 Store UTC (`DATETIME(3)`, Prisma writes UTC). Each clinic has an IANA timezone. All wall-clock ↔ UTC conversion goes through one `lib/time` module built on a timezone library (Luxon is the candidate — decided in Phase 4). The DB connection should run with `time_zone = '+00:00'` so raw SQL comparisons agree with Prisma.
 
-## 3. Open decisions (need the owner)
+## 3. Decisions
 
-1. **Legacy events feature** — keep it running alongside clinics, or retire it once clinics ship? Keeping costs nothing now; tables are not touched either way.
-2. **Interface language** — Arabic-first with RTL, English, or both? This drives font choice and layout in the design system.
-3. **MariaDB strict mode** — enabling `STRICT_TRANS_TABLES` in XAMPP's `my.ini` is recommended. It is a server setting outside the repo, so it is the owner's call.
+### 3.1 Shared database server — protecting other projects (non-negotiable)
+
+The local MariaDB server also hosts other projects (DriveX on `car_rental`). Mawid must never affect them:
+
+- **No server-wide changes**: `my.ini`, ports, global variables and global `sql_mode` are left untouched. Global strict mode is postponed.
+- **Strict mode for Mawid only**: Mawid's own connection pool sets `sql_mode` (with `STRICT_TRANS_TABLES`) and `time_zone = '+00:00'` as **session variables** (`src/config/database.js`). Verified: `@@SESSION.sql_mode` is strict on Mawid's connections while `@@GLOBAL.sql_mode` is unchanged.
+- **Database guard** (`src/config/db-guard.js`): the app *and* every Prisma CLI command (via `prisma7.config.js`) refuse to start unless `DB_NAME` / `DATABASE_URL` name `mawid` or `mawid_<suffix>`, and both agree.
+- **Migrations**: only `prisma migrate deploy` (applies pending migrations, never resets). SQL is generated with `npm run migrate:diff` against the live `mawid` DB and reviewed first. `prisma migrate dev` is not used: it creates a shadow database on the shared server and can offer to reset.
+- Creating any new database (e.g. `mawid_test` for integration tests) is asked for first.
+
+### 3.2 Legacy events and registrations — coexistence
+
+Events/registrations are a **standalone legacy module**: tables, data, routes (`/dashboard`, `/events/*`) and tests stay exactly as they are.
+
+- No foreign key between events and clinics. `users` is shared, so an existing organizer can open a clinic and become its OWNER; their events stay attached to their user account.
+- Namespaces don't collide: the clinic API lives under `/api/v1`, public clinic pages will be `/clinic/:slug`, and `events`, `dashboard` etc. are reserved clinic slugs.
+- Possible later (not built, needs approval): an additive nullable `events.clinic_id` so a clinic can host capacity-limited group events (awareness days, vaccination drives) — the existing capacity engine fits that.
+- When the React dashboards ship, the legacy EJS `/dashboard` will need a new path (e.g. `/events/dashboard` with a redirect). That move will be proposed separately.
+
+### 3.3 Languages
+
+English (default) and Arabic with full RTL, designed in from the start:
+
+- `users.locale` and `clinics.default_locale` (`en` | `ar`) exist from migration `20261125120000_clinic_tenancy`.
+- API errors carry a stable `code` (e.g. `CLINIC_SLUG_TAKEN`, `VALIDATION_FAILED`) so the frontend translates them; the English `message` is a fallback only.
+- Frontend (Phase 5): `lang`/`dir` on `<html>`, logical CSS properties only (start/end), translation keys for all copy, fonts covering Latin and Arabic, dates/numbers formatted per locale in the clinic's timezone.
 
 ## 4. Stage log
 
-- **Stage 1 (this change)** — foundation hardening, no schema change: structured logging, central error handler, rate limits on auth and public registration, login timing fix, `APP_URL`-based origin, body size limit, graceful shutdown. See git history for the exact diff.
+- **Stage 1** (`113703b`) — foundation hardening, no schema change: structured logging, central error handler, rate limits on auth and public registration, login timing fix, `APP_URL`-based origin, body size limit, graceful shutdown.
+- **Stage 2** — multi-tenant foundation:
+  - DB guard + session-scoped strict mode / UTC (3.1). Read-only JSON backup of `mawid` taken before migrating (`backups/`, gitignored).
+  - Additive migration `20261125120000_clinic_tenancy`: `users.platform_role`, `users.locale`, `clinics`, `clinic_members`, `audit_logs`. Existing rows verified intact.
+  - `/api/v1` JSON API: CSRF synchronizer token (`GET /auth/csrf`, `X-CSRF-Token` header), `GET /auth/me`, `GET/POST /clinics`, `GET/PATCH /clinics/:clinicSlug`, `GET /clinics/:clinicSlug/members` (paginated).
+  - Tenant context (`loadTenant`): clinic resolved from slug + the session user's active membership; non-members get 404. Role → permission map (`requirePermission`). Strict zod schemas reject unknown fields such as `clinicId`. Audit log rows written in the same transaction as the change.
+  - Verified with 39 unit tests plus a 22-check end-to-end run against a real server and the `mawid` DB (cross-tenant read/update/list → 404, CSRF missing or foreign token → 403, smuggled `clinicId` → 400); test rows removed afterwards.
+  - Not done yet: JSON login/signup/logout endpoints for the SPA, CSRF tokens on the legacy EJS forms, automated DB-backed isolation tests (need a `mawid_test` database — pending approval), super-admin routes.
