@@ -1,0 +1,9 @@
+<%- include("partials/header") %>
+
+<section style="max-width: 600px; margin: 60px auto; padding: 30px; text-align: center; background: white; border: 1px solid #e2e8f0; border-radius: 12px;">
+    <h1><%= status === 404 ? "Page not found" : status >= 500 ? "Something went wrong" : "Request not completed" %></h1>
+    <p><%= message %></p>
+    <a href="/" style="color: #4f46e5;">Return home</a>
+</section>
+
+<%- include("partials/footer") %>

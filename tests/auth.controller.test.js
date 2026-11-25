@@ -223,3 +223,22 @@ test("login persists a regenerated session for valid credentials", async (t) => 
     assert.equal(req.session.saved, true);
     assert.equal(res.redirectedTo, "/dashboard");
 });
+
+test("login still runs bcrypt when the email is unknown, so timing does not reveal accounts", async (t) => {
+    let comparedHash = null;
+    stubDependencies(t, {
+        findByEmail: async () => null,
+        compare: async (password, hash) => {
+            comparedHash = hash;
+            return true;
+        },
+    });
+
+    const req = makeRequest({ email: "nobody@example.com", password: "any-password" });
+    const res = makeResponse();
+    await authController.login(req, res);
+
+    assert.match(comparedHash, /^\$2b\$12\$/);
+    assert.equal(res.statusCode, 401);
+    assert.equal(req.session.regenerated, false);
+});

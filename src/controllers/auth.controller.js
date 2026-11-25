@@ -3,6 +3,9 @@ const User = require("../models/user.model");
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const bcryptMaxBytes = 72;
+// bcrypt hash (cost 12) of a random throwaway value. Compared against when the email is
+// unknown so that login takes the same time whether or not the account exists.
+const dummyPasswordHash = "$2b$12$KOJFVQXgL/wgz6y7IUtWvO.XcBGnT4V3CW2KUI.Kn2GgwmexWZkCO";
 
 function formValues(body) {
     const fields = body && typeof body === "object" && !Array.isArray(body) ? body : {};
@@ -122,7 +125,8 @@ async function login(req, res) {
     }
 
     const user = await User.findByEmail(values.email);
-    if (!user || !(await bcrypt.compare(values.password, user.passwordHash))) {
+    const passwordMatches = await bcrypt.compare(values.password, user ? user.passwordHash : dummyPasswordHash);
+    if (!user || !passwordMatches) {
         return res.status(401).render("login", {
             error: "Wrong email or password.",
             values: { email: values.email },
