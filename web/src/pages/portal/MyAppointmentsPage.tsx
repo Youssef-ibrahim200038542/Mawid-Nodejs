@@ -46,7 +46,7 @@ function AppointmentRow({ appointment, onCancel, onReschedule }: { appointment: 
                         <Button size="sm" onClick={onReschedule} disabled={tooLate} title={tooLate ? t("portal.changeClosed") : undefined}>
                             {t("portal.reschedule")}
                         </Button>
-                        <Button size="sm" variant="ghost" className="text-carmine-deep" onClick={onCancel} disabled={tooLate} title={tooLate ? t("portal.changeClosed") : undefined}>
+                        <Button size="sm" variant="dangerGhost" onClick={onCancel} disabled={tooLate} title={tooLate ? t("portal.changeClosed") : undefined}>
                             {t("portal.cancel")}
                         </Button>
                     </>

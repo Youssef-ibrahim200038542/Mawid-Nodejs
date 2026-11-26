@@ -13,7 +13,7 @@ import { useLedger } from "@/components/ledger/useLedger";
 import { useInvalidateAppointments } from "@/components/staff/AppointmentPanel";
 import { useToast } from "@/components/ui/Toast";
 import { useStaff } from "@/layouts/StaffLayout";
-import { formatMoney, formatTime } from "@/lib/format";
+import { formatMoney, formatTime, localDateOf } from "@/lib/format";
 import { NotAllowed } from "./StaffIndex";
 
 const phonePattern = /^\+?[0-9 ()-]{6,30}$/;
@@ -97,7 +97,7 @@ export default function NewBookingPage() {
         onSuccess: ({ appointment }) => {
             notify(t("booking.booked", { time: formatTime(appointment.startsAt, zone, locale) }));
             invalidate();
-            navigate(`/c/${slug}/today`);
+            navigate(`/c/${slug}/today?date=${localDateOf(appointment.startsAt, zone)}`);
         },
         onError: (error) => {
             if (error instanceof ApiError && ["SLOT_TAKEN", "DOCTOR_UNAVAILABLE", "OUTSIDE_WORKING_HOURS"].includes(error.code)) {

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MapPin, Phone, EnvelopeSimple, Clock, CheckCircle, Stethoscope } from "@phosphor-icons/react";
+import { MapPin, Phone, EnvelopeSimple, Clock, CheckCircle, Stethoscope, ArrowLeft } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n";
 import { useAuth } from "@/auth/AuthProvider";
 import { publicApi } from "@/api/endpoints";
@@ -11,7 +11,7 @@ import { Button, ButtonLink, ErrorPanel, ErrorSummary, Field, Select, Skeleton, 
 import { DayStrip } from "@/components/ledger/DayStrip";
 import { SlotPicker, type LedgerSlot } from "@/components/ledger/SlotPicker";
 import { useLedger } from "@/components/ledger/useLedger";
-import { formatDate, formatMoney, formatTime } from "@/lib/format";
+import { formatDate, formatMoney, formatTime, joinParts } from "@/lib/format";
 import NotFoundPage from "@/pages/NotFoundPage";
 
 const bookingDays = 14; // the public availability window allowed by the API
@@ -279,21 +279,23 @@ export default function ClinicPage() {
                 {(clinic.address || clinic.city) && (
                     <p className="flex items-center gap-1.5 text-sm text-graphite">
                         <MapPin aria-hidden size={18} />
-                        {[clinic.address, clinic.city].filter(Boolean).join("، ")}
+                        {joinParts([clinic.address, clinic.city], locale)}
                     </p>
                 )}
             </header>
 
-            <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
                 <BookingPanel data={query.data} slug={slug} />
 
                 <aside className="flex flex-col gap-8">
+                    {workingHours.intervals.length > 0 && (
                     <section aria-labelledby="hours-title">
                         <h2 id="hours-title" className="mb-2 flex items-center gap-2 text-base font-semibold">
                             <Clock aria-hidden size={18} /> {t("clinicPage.hours")}
                         </h2>
                         <WeeklyHoursList intervals={workingHours.intervals} zone={workingHours.timezone} />
                     </section>
+                    )}
                     {(clinic.phone || clinic.email) && (
                         <section aria-labelledby="contact-title">
                             <h2 id="contact-title" className="mb-2 text-base font-semibold">
@@ -364,8 +366,8 @@ export default function ClinicPage() {
                 </section>
             )}
             <p className="mt-10 text-sm">
-                <Link to="/clinics" className="text-malachite-deep hover:underline">
-                    ← {t("nav.clinics")}
+                <Link to="/clinics" className="inline-flex items-center gap-1.5 text-malachite-deep hover:underline">
+                    <ArrowLeft aria-hidden size={16} className="flip-rtl" /> {t("nav.clinics")}
                 </Link>
             </p>
         </div>

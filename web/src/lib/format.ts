@@ -57,3 +57,6 @@ export const localDateOf = (iso: string, timeZone: string) => DateTime.fromISO(i
 export const hhmmOfLocal = (localIso: string) => localIso.slice(11, 16);
 /** Input value for <input type="datetime-local"> from a UTC instant, in the clinic zone. */
 export const toLocalInput = (iso: string, timeZone: string) => DateTime.fromISO(iso).setZone(timeZone).toFormat("yyyy-MM-dd'T'HH:mm");
+
+/** "Zamalek, Cairo" in English, "الزمالك، القاهرة" in Arabic. */
+export const joinParts = (parts: (string | null | undefined)[], locale: Locale) => parts.filter(Boolean).join(locale === "ar" ? "، " : ", ");

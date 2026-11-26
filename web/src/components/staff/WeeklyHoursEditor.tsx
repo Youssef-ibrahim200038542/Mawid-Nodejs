@@ -85,7 +85,8 @@ export function WeeklyHoursEditor({
                                 return (
                                     <div key={index}>
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <TextInput
+                                            <div className="w-24 shrink-0">
+                                                <TextInput
                                                 aria-label={`${t(`weekdays.${day}`)} ${t("hours.from")}`}
                                                 aria-invalid={problem ? true : undefined}
                                                 value={interval.start}
@@ -93,11 +94,13 @@ export function WeeklyHoursEditor({
                                                 inputMode="numeric"
                                                 placeholder="09:00"
                                                 dir="ltr"
-                                                className="tabular w-24"
+                                                className="tabular"
                                                 disabled={readOnly}
                                             />
+                                            </div>
                                             <span aria-hidden className="text-graphite">–</span>
-                                            <TextInput
+                                            <div className="w-24 shrink-0">
+                                                <TextInput
                                                 aria-label={`${t(`weekdays.${day}`)} ${t("hours.to")}`}
                                                 aria-invalid={problem ? true : undefined}
                                                 value={interval.end}
@@ -105,9 +108,10 @@ export function WeeklyHoursEditor({
                                                 inputMode="numeric"
                                                 placeholder="17:00"
                                                 dir="ltr"
-                                                className="tabular w-24"
+                                                className="tabular"
                                                 disabled={readOnly}
                                             />
+                                            </div>
                                             {!readOnly && (
                                                 <Button
                                                     size="sm"

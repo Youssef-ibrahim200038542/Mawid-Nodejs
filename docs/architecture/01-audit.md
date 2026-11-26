@@ -198,3 +198,4 @@ English (default) and Arabic with full RTL, designed in from the start:
 - **Stage 4 — Phase 3 clinic operations** — see [02-clinic-operations.md](02-clinic-operations.md). Migration `20261125140000_clinic_operations` applied to `mawid_test` only; `mawid` pending approval.
 - **Stage 5 — Phase 4 booking engine** — see [03-appointments.md](03-appointments.md). Migration `20261125160000_appointments` on `mawid_test` only. `npm start` no longer runs migrations, and `prisma7.config.js` refuses writing Prisma commands against `mawid` unless `MAWID_ALLOW_PROD_MIGRATE=1`.
 - **Stage 6 — platform backend** — JSON auth for the SPA, staff membership, notifications (migration `20261125180000_notifications`, `mawid_test` only), analytics, clinic audit log, Super Admin API. See [04-platform-backend.md](04-platform-backend.md).
+- **Stage 7 — web app** — React frontend for all roles, browser-tested against the real API on `mawid_test`. See [06-frontend.md](06-frontend.md).

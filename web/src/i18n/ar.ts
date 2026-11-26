@@ -38,6 +38,8 @@ const ar: Dictionary = {
         actions: "إجراءات",
         details: "التفاصيل",
         notAvailable: "—",
+        deactivate: "إيقاف",
+        activate: "تفعيل",
     },
     nav: {
         clinics: "ابحث عن عيادة",

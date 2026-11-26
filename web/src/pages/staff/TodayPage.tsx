@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { CaretLeft, CaretRight, CalendarPlus, Clock } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n";
@@ -14,7 +15,9 @@ import { cx } from "@/lib/cx";
 export default function TodayPage() {
     const { t, pick, locale } = useI18n();
     const { slug, zone, can, clinic } = useStaff();
-    const [date, setDate] = useState(() => todayIn(zone));
+    const [params] = useSearchParams();
+    const requested = params.get("date");
+    const [date, setDate] = useState(() => (requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayIn(zone)));
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const isToday = date === todayIn(zone);
 
@@ -93,7 +96,7 @@ export default function TodayPage() {
             ) : columns.length === 0 ? (
                 <EmptyState title={t("today.noDoctors")} action={can("doctors:manage") && <ButtonLink to={`/c/${slug}/doctors`}>{t("staffNav.doctors")}</ButtonLink>} />
             ) : (
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+                <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
                     <div className="overflow-x-auto rounded-sheet bg-surface ring-1 ring-rule">
                         <table className="w-full min-w-[32rem] border-collapse text-sm">
                             <caption className="sr-only">{t("today.title")}</caption>

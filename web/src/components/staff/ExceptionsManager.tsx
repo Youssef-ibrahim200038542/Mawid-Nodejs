@@ -96,7 +96,7 @@ export function ExceptionsManager({
                                 {e.reason && <p className="text-graphite">{e.reason}</p>}
                             </div>
                             {canDelete(e.doctorId) && (
-                                <Button size="sm" variant="ghost" className="text-carmine-deep" icon={<Trash aria-hidden size={16} />} onClick={() => setRemoving(e.id)}>
+                                <Button size="sm" variant="dangerGhost" icon={<Trash aria-hidden size={16} />} onClick={() => setRemoving(e.id)}>
                                     {t("common.remove")}
                                 </Button>
                             )}

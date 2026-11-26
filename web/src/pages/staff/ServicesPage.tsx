@@ -141,7 +141,7 @@ export default function ServicesPage() {
                                         {t("common.edit")}
                                     </Button>
                                     <Button size="sm" variant="ghost" loading={toggle.isPending && toggle.variables?.id === s.id} onClick={() => toggle.mutate(s)}>
-                                        {s.isActive ? t("common.inactive") : t("common.active")}
+                                        {s.isActive ? t("common.deactivate") : t("common.activate")}
                                     </Button>
                                 </div>
                             </li>

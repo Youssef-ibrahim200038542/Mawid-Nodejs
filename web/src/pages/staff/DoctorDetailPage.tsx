@@ -102,7 +102,8 @@ function LinkPicker({ doctor, kind }: { doctor: Doctor; kind: "services" | "spec
     const { notify } = useToast();
     const queryClient = useQueryClient();
     const options = useQuery({
-        queryKey: ["staff", slug, kind, "all"],
+        // Own key: the Services/Specialties pages cache the raw `{ services }` response under "all".
+        queryKey: ["staff", slug, kind, "link-options"],
         queryFn: async () =>
             kind === "services" ? (await servicesApi.list(slug, true)).services : (await specialtiesApi.list(slug, true)).specialties,
     });

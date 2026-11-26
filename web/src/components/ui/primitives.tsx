@@ -15,7 +15,7 @@ import { useI18n } from "@/i18n";
 import { cx } from "@/lib/cx";
 
 // ───────────────────────────── Buttons
-type Variant = "primary" | "ink" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "ink" | "secondary" | "ghost" | "danger" | "dangerGhost";
 type Size = "md" | "sm";
 
 const variants: Record<Variant, string> = {
@@ -24,6 +24,7 @@ const variants: Record<Variant, string> = {
     secondary: "border border-rule-strong bg-surface text-ink hover:bg-paper disabled:text-graphite",
     ghost: "text-ink hover:bg-ink/5 disabled:text-graphite",
     danger: "bg-carmine text-white hover:bg-carmine-deep disabled:bg-carmine/50",
+    dangerGhost: "text-carmine-deep hover:bg-carmine-tint disabled:text-graphite",
 };
 const sizes: Record<Size, string> = {
     md: "min-h-11 px-4 text-sm",
@@ -249,7 +250,10 @@ export function Dialog({ open, onClose, title, children, footer, size = "md" }: 
     useEffect(() => {
         const dialog = ref.current;
         if (!dialog) return;
-        if (open && !dialog.open) dialog.showModal();
+        if (open && !dialog.open) {
+            dialog.showModal();
+            dialog.querySelector<HTMLElement>("[data-dialog-body]")?.scrollTo(0, 0);
+        }
         if (!open && dialog.open) dialog.close();
     }, [open]);
     return (
@@ -272,11 +276,11 @@ export function Dialog({ open, onClose, title, children, footer, size = "md" }: 
                         <h2 id={titleId} className="text-lg font-semibold">
                             {title}
                         </h2>
-                        <button type="button" onClick={onClose} className="-m-2 rounded-control p-2 text-graphite hover:bg-ink/5 hover:text-ink" aria-label={t("common.close")}>
+                        <button type="button" autoFocus onClick={onClose} className="-m-2 rounded-control p-2 text-graphite hover:bg-ink/5 hover:text-ink" aria-label={t("common.close")}>
                             <X aria-hidden size={18} />
                         </button>
                     </div>
-                    <div className="overflow-y-auto px-5 py-4">{children}</div>
+                    <div data-dialog-body className="overflow-y-auto px-5 py-4">{children}</div>
                     {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-rule px-5 py-4">{footer}</div>}
                 </div>
             )}

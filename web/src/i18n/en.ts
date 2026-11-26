@@ -36,6 +36,8 @@ const en = {
         actions: "Actions",
         details: "Details",
         notAvailable: "—",
+        deactivate: "Deactivate",
+        activate: "Activate",
     },
     nav: {
         clinics: "Find a clinic",

@@ -152,7 +152,7 @@ export function AppointmentPanel({ appointment, onChanged }: { appointment: Appo
                         <Button disabled={busy} onClick={() => setMoveOpen(true)}>
                             {t("appt.reschedule")}
                         </Button>
-                        <Button variant="ghost" className="text-carmine-deep" disabled={busy} onClick={() => setCancelOpen(true)}>
+                        <Button variant="dangerGhost" disabled={busy} onClick={() => setCancelOpen(true)}>
                             {t("appt.cancel")}
                         </Button>
                     </>

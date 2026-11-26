@@ -85,7 +85,7 @@ export default function AdminClinicsPage() {
                                         <td className="tabular px-4 py-3 text-end">{formatNumber(c._count.appointments, locale)}</td>
                                         <td className={c.status === "ACTIVE" ? "px-4 py-3 text-malachite-deep" : "px-4 py-3 text-carmine-deep"}>{c.status === "ACTIVE" ? t("common.active") : t("admin.suspendedClinics")}</td>
                                         <td className="px-4 py-3 text-end">
-                                            <Button size="sm" variant={c.status === "ACTIVE" ? "ghost" : "secondary"} className={c.status === "ACTIVE" ? "text-carmine-deep" : undefined} onClick={() => setTarget(c)}>
+                                            <Button size="sm" variant={c.status === "ACTIVE" ? "dangerGhost" : "secondary"} onClick={() => setTarget(c)}>
                                                 {c.status === "ACTIVE" ? t("admin.suspend") : t("admin.reactivate")}
                                             </Button>
                                         </td>

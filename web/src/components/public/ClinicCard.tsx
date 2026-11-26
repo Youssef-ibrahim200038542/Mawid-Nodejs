@@ -2,9 +2,10 @@ import { Link } from "react-router";
 import { MapPin } from "@phosphor-icons/react";
 import { useI18n } from "@/i18n";
 import type { PublicClinicListItem } from "@/api/types";
+import { joinParts } from "@/lib/format";
 
 export function ClinicCard({ clinic }: { clinic: PublicClinicListItem }) {
-    const { t, pick } = useI18n();
+    const { t, pick, locale } = useI18n();
     return (
         <Link
             to={`/clinics/${clinic.slug}`}
@@ -14,7 +15,7 @@ export function ClinicCard({ clinic }: { clinic: PublicClinicListItem }) {
             {(clinic.city || clinic.address) && (
                 <span className="flex items-center gap-1.5 text-sm text-graphite">
                     <MapPin aria-hidden size={16} />
-                    {[clinic.address, clinic.city].filter(Boolean).join("، ")}
+                    {joinParts([clinic.address, clinic.city], locale)}
                 </span>
             )}
             {clinic.specialties.length > 0 && (

@@ -7,12 +7,14 @@ import { clinicsApi, doctorsApi } from "@/api/endpoints";
 import { Button, Checkbox, Dialog, EmptyState, ErrorPanel, ErrorSummary, Field, PageHeader, Select, SkeletonRows, TextInput } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { useStaff } from "@/layouts/StaffLayout";
+import { useAuth } from "@/auth/AuthProvider";
 import { NotAllowed } from "./StaffIndex";
 
 export default function DoctorsPage() {
     const { t, pick, errorMessage } = useI18n();
     const { slug, can } = useStaff();
     const { notify } = useToast();
+    const { refresh } = useAuth();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [showInactive, setShowInactive] = useState(true);
@@ -33,6 +35,7 @@ export default function DoctorsPage() {
         onSuccess: ({ doctor }) => {
             notify(t("doctors.created"));
             queryClient.invalidateQueries({ queryKey: ["staff", slug, "doctors"] });
+            refresh();
             setAdding(false);
             navigate(`/c/${slug}/doctors/${doctor.id}`);
         },

@@ -67,7 +67,7 @@ export default function SpecialtiesPage() {
                             <div className="flex gap-2">
                                 <Button size="sm" onClick={() => open(s)}>{t("common.edit")}</Button>
                                 <Button size="sm" variant="ghost" onClick={() => toggle.mutate(s)} loading={toggle.isPending && toggle.variables?.id === s.id}>
-                                    {s.isActive ? t("common.inactive") : t("common.active")}
+                                    {s.isActive ? t("common.deactivate") : t("common.activate")}
                                 </Button>
                             </div>
                         </li>

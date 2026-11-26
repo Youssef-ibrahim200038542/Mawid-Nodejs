@@ -5,6 +5,7 @@ import { RequireAuth, RequireSuperAdmin } from "@/auth/guards";
 import { Spinner } from "@/components/ui/primitives";
 import HomePage from "@/pages/public/HomePage";
 import NotFoundPage from "@/pages/NotFoundPage";
+import RouteError from "@/pages/RouteError";
 
 // Everything except the home page is code-split; patients never download the staff/admin areas.
 const DiscoveryPage = lazy(() => import("@/pages/public/DiscoveryPage"));
@@ -55,6 +56,7 @@ const page = (node: ReactNode) => (
 export const router = createBrowserRouter([
     {
         element: <PublicLayout />,
+        errorElement: <RouteError />,
         children: [
             { index: true, element: <HomePage /> },
             { path: "clinics", element: page(<DiscoveryPage />) },
@@ -71,6 +73,7 @@ export const router = createBrowserRouter([
     },
     {
         path: "c/:slug",
+        errorElement: <RouteError />,
         element: <RequireAuth>{page(<StaffLayout />)}</RequireAuth>,
         children: [
             { index: true, element: page(<StaffIndex />) },
@@ -95,6 +98,7 @@ export const router = createBrowserRouter([
     },
     {
         path: "admin",
+        errorElement: <RouteError />,
         element: (
             <RequireAuth>
                 <RequireSuperAdmin>{page(<AdminLayout />)}</RequireSuperAdmin>
