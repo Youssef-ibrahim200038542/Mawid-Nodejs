@@ -12,7 +12,11 @@
     "test": "node --test \"tests/*.test.js\"",
     "race": "node scripts/race.js",
     "test:db:migrate": "node scripts/test-db.js",
-    "test:integration": "node scripts/test-db.js && node --test --test-concurrency=1 --test-timeout=30000 --require ./tests/integration/env.js \"tests/integration/*.test.js\""
+    "test:integration": "node scripts/test-db.js && node --test --test-concurrency=1 --test-timeout=30000 --require ./tests/integration/env.js \"tests/integration/*.test.js\"",
+    "dev:test-db": "node scripts/dev-test-server.js",
+    "web:dev": "node scripts/dev-web-test.js",
+    "web:build": "npm --prefix web run build",
+    "web:typecheck": "npm --prefix web run typecheck"
   },
   "keywords": [],
   "type": "commonjs",

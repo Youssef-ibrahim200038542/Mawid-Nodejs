@@ -47,11 +47,23 @@ async function createClinic({ actorUserId, ipAddress, input }) {
 async function listClinicsForUser(userId) {
     const memberships = await prisma.clinicMember.findMany({
         where: { userId, status: "ACTIVE", clinic: { status: "ACTIVE" } },
-        select: { role: true, clinic: { select: { id: true, slug: true, name: true, timezone: true, defaultLocale: true } } },
+        select: {
+            id: true,
+            role: true,
+            doctorProfile: { select: { id: true } },
+            clinic: { select: { id: true, slug: true, name: true, timezone: true, defaultLocale: true } },
+        },
         orderBy: { createdAt: "asc" },
         take: maxClinicsListed,
     });
-    return memberships.map(({ role, clinic }) => ({ ...clinic, role }));
+    // memberId / doctorProfileId let the UI find "my own" doctor schedule; they are the caller's
+    // own ids, and the server still enforces ownership on every request.
+    return memberships.map(({ id, role, doctorProfile, clinic }) => ({
+        ...clinic,
+        role,
+        memberId: id,
+        doctorProfileId: doctorProfile ? doctorProfile.id : null,
+    }));
 }
 
 // Every tenant query filters by tenant.clinicId, which comes from loadTenant, never the request.

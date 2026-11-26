@@ -1,0 +1,128 @@
+@import "@fontsource-variable/alexandria";
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   Mawid design tokens — Direction A «دفتر المواعيد» (the ledger).
+   Every color pair used for text is ≥ 4.5:1 (see docs/design/01-design-direction.md).
+   ───────────────────────────────────────────────────────────── */
+@theme {
+    --font-sans: "Alexandria Variable", "Alexandria", system-ui, "Segoe UI", sans-serif;
+
+    --color-paper: #f7f8f6;
+    --color-surface: #ffffff;
+    --color-ink: #17201d;
+    --color-graphite: #56615c;
+    --color-rule: #dde1dd;
+    --color-rule-strong: #b6bdb8;
+
+    --color-malachite: #0b6e4f;
+    --color-malachite-deep: #085a41;
+    --color-malachite-tint: #e2efe9;
+
+    --color-saffron: #e0a526;
+    --color-saffron-tint: #fbf1d8;
+
+    --color-carmine: #b42335;
+    --color-carmine-deep: #93192a;
+    --color-carmine-tint: #f8e3e6;
+
+    --radius-control: 6px;
+    --radius-sheet: 10px;
+
+    /* Type scale (≈1.2 modular, 16px base). */
+    --text-2xs: 0.75rem;
+    --text-xs: 0.8125rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --text-xl: 1.3125rem;
+    --text-2xl: 1.625rem;
+    --text-3xl: 2rem;
+    --text-4xl: 2.75rem;
+    --text-5xl: 3.75rem;
+
+    --shadow-float: 0 1px 2px rgb(23 32 29 / 0.06), 0 8px 24px -8px rgb(23 32 29 / 0.18);
+
+    --animate-ink: ink-stamp 420ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes ink-stamp {
+    0% { transform: scale(1.08); opacity: 0; }
+    60% { transform: scale(0.98); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+@layer base {
+    html {
+        background: var(--color-paper);
+        color: var(--color-ink);
+        font-family: var(--font-sans);
+        font-size: 100%;
+        -webkit-text-size-adjust: 100%;
+        text-rendering: optimizeLegibility;
+    }
+    body {
+        line-height: 1.55;
+        min-height: 100dvh;
+        font-feature-settings: "tnum" 0;
+    }
+    /* Arabic script needs a little more air. */
+    html[lang="ar"] body {
+        line-height: 1.7;
+    }
+    h1, h2, h3 {
+        line-height: 1.2;
+        text-wrap: balance;
+    }
+    :focus-visible {
+        outline: 2px solid var(--color-malachite);
+        outline-offset: 2px;
+        border-radius: 3px;
+    }
+    ::selection {
+        background: var(--color-malachite-tint);
+    }
+    button, [role="button"], a, summary, label[for] {
+        touch-action: manipulation;
+    }
+    [hidden] { display: none !important; }
+}
+
+@layer utilities {
+    /* Times are the typography: tabular figures keep columns aligned. */
+    .tabular { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+    /* The ledger rule: a hairline that carries meaning (a time row). */
+    .ledger-rule { border-block-start: 1px solid var(--color-rule); }
+    .flip-rtl:dir(rtl) { transform: scaleX(-1); }
+    .sr-only-focusable:not(:focus) {
+        position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* FullCalendar themed with the ledger tokens. */
+.fc {
+    --fc-border-color: var(--color-rule);
+    --fc-today-bg-color: color-mix(in srgb, var(--color-malachite-tint) 55%, transparent);
+    --fc-now-indicator-color: var(--color-carmine);
+    --fc-page-bg-color: var(--color-surface);
+    --fc-neutral-bg-color: var(--color-paper);
+    --fc-event-border-color: transparent;
+    font-size: var(--text-sm);
+}
+.fc .fc-timegrid-slot-label, .fc .fc-col-header-cell-cushion { color: var(--color-graphite); font-variant-numeric: tabular-nums; }
+.fc .fc-timegrid-slot { height: 2.25rem; }
+.fc .fc-event { border-radius: 4px; cursor: pointer; }
+.fc .fc-event:focus-visible { outline: 2px solid var(--color-ink); }
+.fc .fc-button { background: var(--color-surface); color: var(--color-ink); border: 1px solid var(--color-rule-strong); text-transform: none; box-shadow: none; }
+.fc .fc-button:hover { background: var(--color-paper); color: var(--color-ink); }
+.fc .fc-button-primary:not(:disabled).fc-button-active { background: var(--color-ink); border-color: var(--color-ink); color: var(--color-paper); }
+.fc .fc-toolbar-title { font-size: var(--text-lg); font-weight: 600; }

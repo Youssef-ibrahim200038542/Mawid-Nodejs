@@ -13,11 +13,11 @@ function createLimiter({ windowMs, limit, skipSuccessfulRequests = false, keyByU
         legacyHeaders: false,
         ...(keyByUser
             ? {
-                  keyGenerator(req) {
-                      const userId = req.session && req.session.user && req.session.user.id;
-                      return userId ? `user:${userId}` : `ip:${ipKeyGenerator(req.ip)}`;
-                  },
-              }
+                keyGenerator(req) {
+                    const userId = req.session && req.session.user && req.session.user.id;
+                    return userId ? `user:${userId}` : `ip:${ipKeyGenerator(req.ip)}`;
+                },
+            }
             : {}),
         handler(req, res, next) {
             const error = new Error("Rate limit exceeded");
