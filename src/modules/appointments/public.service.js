@@ -54,7 +54,8 @@ async function getPublicClinic(slug) {
             take: 200,
         }),
         prisma.doctorProfile.findMany({
-            where: { clinicId: clinic.id, isActive: true, member: { status: "ACTIVE" } },
+            // Only bookable doctors are public: a not-yet-re-confirmed membership is hidden.
+            where: { clinicId: clinic.id, isActive: true, member: { status: "ACTIVE", trustState: "TRUSTED" } },
             select: {
                 id: true,
                 displayNameEn: true,

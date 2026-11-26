@@ -53,13 +53,19 @@ async function lockDoctors(tx, clinicId, doctorIds) {
     const locked = new Map();
     for (const id of unique) {
         const rows = await tx.$queryRaw`
-            SELECT d.id, d.member_id AS memberId, d.is_active AS isActive, m.status AS memberStatus
+            SELECT d.id, d.member_id AS memberId, d.is_active AS isActive, m.status AS memberStatus, m.trust_state AS trustState
             FROM doctor_profiles d JOIN clinic_members m ON m.id = d.member_id
             WHERE d.id = ${id} AND d.clinic_id = ${clinicId}
             FOR UPDATE
         `;
         if (rows.length === 0) throw new AppError(400, "INVALID_DOCTOR", "That doctor isn't part of this clinic.");
-        locked.set(id, { id, memberId: rows[0].memberId, isActive: Boolean(rows[0].isActive), memberStatus: rows[0].memberStatus });
+        locked.set(id, {
+            id,
+            memberId: rows[0].memberId,
+            isActive: Boolean(rows[0].isActive),
+            memberStatus: rows[0].memberStatus,
+            trustState: rows[0].trustState,
+        });
     }
     return locked;
 }
@@ -80,7 +86,9 @@ function bookingWindow({ now, online }) {
  * that already holds the doctor's lock. Returns the service snapshot and end time.
  */
 async function validateBooking(tx, { clinic, doctor, serviceId, startsAt, patientId, excludeAppointmentId = null, online, now }) {
-    if (!doctor.isActive || doctor.memberStatus !== "ACTIVE") {
+    // Checked under the doctor + membership row lock: a doctor whose membership is still
+    // LEGACY_UNREVIEWED (not re-confirmed) takes no new bookings or moves onto their calendar.
+    if (!doctor.isActive || doctor.memberStatus !== "ACTIVE" || doctor.trustState !== "TRUSTED") {
         throw new AppError(409, "DOCTOR_NOT_BOOKABLE", "This doctor isn't taking appointments.");
     }
     if (startsAt.getUTCSeconds() !== 0 || startsAt.getUTCMilliseconds() !== 0 || startsAt.getUTCMinutes() % policy.startGranularityMinutes !== 0) {

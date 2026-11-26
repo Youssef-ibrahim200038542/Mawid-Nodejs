@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "@/api/endpoints";
-import { ApiError, setCsrfToken } from "@/api/client";
+import { ApiError, onUnauthenticated, setCsrfToken } from "@/api/client";
 import type { Locale, MePayload, MyClinic } from "@/api/types";
 import { useI18n } from "@/i18n";
 
@@ -11,7 +11,8 @@ interface AuthContextValue {
     me: MePayload | null;
     loading: boolean;
     login: (email: string, password: string) => Promise<MePayload>;
-    signup: (name: string, email: string, password: string) => Promise<MePayload>;
+    // Signup never logs in: the account must confirm its email address first.
+    signup: (name: string, email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
     refresh: () => Promise<unknown>;
     clinicBySlug: (slug: string | undefined) => MyClinic | undefined;
@@ -39,6 +40,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         retry: (count, error) => !(error instanceof ApiError && error.status < 500) && count < 2,
     });
 
+    // A 401 from any authenticated call (expired or revoked session) drops the local identity;
+    // guards then redirect to the login page.
+    useEffect(
+        () =>
+            onUnauthenticated(() => {
+                setCsrfToken(null);
+                queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "auth" });
+                queryClient.setQueryData(meQueryKey, null);
+            }),
+        [queryClient]
+    );
+
     // The account's saved language wins once we know who the user is.
     const savedLocale = query.data?.user.locale;
     useEffect(() => {
@@ -63,7 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             me: query.data ?? null,
             loading: query.isPending,
             login: async (email, password) => afterAuth(await authApi.login({ email, password })),
-            signup: async (name, email, password) => afterAuth(await authApi.signup({ name, email, password, locale })),
+            signup: async (name, email, password) => {
+                await authApi.signup({ name, email, password, locale });
+            },
             logout: async () => {
                 await authApi.logout().catch(() => undefined);
                 setCsrfToken(null);

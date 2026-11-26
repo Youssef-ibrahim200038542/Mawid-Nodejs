@@ -1,6 +1,14 @@
+const { assertProductionConfig } = require("./config/startup-checks");
+const { productionProviders } = require("./modules/notifications/email-provider");
+
+// Fail fast, before anything listens: production needs a real email provider and an https web URL.
+assertProductionConfig(process.env, { knownProviders: productionProviders });
+
 const app = require("./app");
 const prisma = require("./config/database");
 const logger = require("./lib/logger");
+const background = require("./lib/background-work");
+const { startDeliveryRecovery, stopDeliveryRecovery } = require("./modules/auth/auth-delivery");
 
 const port = process.env.PORT || 3000;
 const shutdownTimeoutMs = 10_000;
@@ -23,6 +31,9 @@ async function start() {
         process.exit(1);
     });
 
+    // Re-sends account emails interrupted by a crash or a transient provider failure.
+    startDeliveryRecovery();
+
     let shuttingDown = false;
     function shutdown(signal) {
         if (shuttingDown) return;
@@ -35,6 +46,11 @@ async function start() {
         }, shutdownTimeoutMs).unref();
 
         server.close(async () => {
+            // Stop claiming new deliveries, then let in-flight sends finish (provider timeout is 8 s).
+            // Anything cut off stays QUEUED/SENDING in the database and is recovered on the next start.
+            await stopDeliveryRecovery().catch((err) => logger.error({ err }, "Stopping delivery recovery failed"));
+            const drained = await background.drain(8_500);
+            if (!drained) logger.warn({ pending: background.pendingCount() }, "Shutdown left background work unfinished");
             await prisma.$disconnect().catch((err) => logger.error({ err }, "Prisma disconnect failed"));
             process.exit(0);
         });

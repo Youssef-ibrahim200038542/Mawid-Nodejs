@@ -25,7 +25,7 @@ async function loadAppointmentContext(db, appointmentId) {
             startsAt: true,
             endsAt: true,
             clinic: { select: { slug: true, name: true, timezone: true } },
-            doctor: { select: { displayNameEn: true, displayNameAr: true, member: { select: { userId: true, status: true } } } },
+            doctor: { select: { displayNameEn: true, displayNameAr: true, member: { select: { userId: true, status: true, trustState: true } } } },
             service: { select: { nameEn: true, nameAr: true } },
             patient: { select: { userId: true } },
         },
@@ -34,12 +34,14 @@ async function loadAppointmentContext(db, appointmentId) {
 
 async function staffRecipients(db, appointment) {
     const staff = await db.clinicMember.findMany({
-        where: { clinicId: appointment.clinicId, status: "ACTIVE", role: { in: ["OWNER", "RECEPTIONIST"] } },
+        // Only trusted memberships see clinic activity (legacy ones await re-confirmation).
+        where: { clinicId: appointment.clinicId, status: "ACTIVE", trustState: "TRUSTED", role: { in: ["OWNER", "RECEPTIONIST"] } },
         select: { userId: true },
         take: 50,
     });
     const ids = new Set(staff.map((member) => member.userId));
-    if (appointment.doctor.member.status === "ACTIVE") ids.add(appointment.doctor.member.userId);
+    const doctorMember = appointment.doctor.member;
+    if (doctorMember.status === "ACTIVE" && doctorMember.trustState === "TRUSTED") ids.add(doctorMember.userId);
     return [...ids];
 }
 
@@ -106,11 +108,16 @@ async function deliverPendingEmails({ limit = 50 } = {}) {
     const provider = getEmailProvider();
     const pending = await prisma.notification.findMany({
         where: { emailStatus: "PENDING" },
-        select: { id: true, type: true, payload: true, user: { select: { email: true } } },
+        select: { id: true, type: true, payload: true, user: { select: { email: true, emailVerifiedAt: true } } },
         orderBy: { id: "asc" },
         take: limit,
     });
     for (const item of pending) {
+        // Email only goes to addresses whose owner proved control of them.
+        if (!item.user.emailVerifiedAt) {
+            await prisma.notification.update({ where: { id: item.id }, data: { emailStatus: "SKIPPED" } });
+            continue;
+        }
         try {
             const result = await provider.send({ to: item.user.email, subject: subjects[item.type], text: JSON.stringify(item.payload) });
             await prisma.notification.update({ where: { id: item.id }, data: { emailStatus: result.status } });

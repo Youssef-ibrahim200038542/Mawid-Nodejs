@@ -10,13 +10,19 @@ const validate = require("../../middleware/validate");
 const { AppError, notFound } = require("../../lib/errors");
 const { recordAudit } = require("../../lib/audit");
 const { parseIdParam } = require("../../lib/tenant-data");
+const { createLimiter } = require("../../middleware/rate-limit");
+const invitations = require("../invitations/invitation.service");
+const { bootstrapSchema } = require("../invitations/invitation.schemas");
 
 const router = express.Router();
+const bootstrapLimiter = createLimiter({ windowMs: 60 * 60 * 1000, limit: 20, keyByUser: true });
 
 async function requireSuperAdmin(req, res, next) {
-    const user = await prisma.user.findUnique({ where: { id: req.session.user.id }, select: { platformRole: true } });
+    const user = await prisma.user.findUnique({ where: { id: req.session.user.id }, select: { platformRole: true, emailVerifiedAt: true } });
     // 404 instead of 403: the admin area's existence isn't confirmed to other users.
     if (!user || user.platformRole !== "SUPER_ADMIN") return next(notFound());
+    // Account security (H1): the platform console requires a verified email.
+    if (!user.emailVerifiedAt) return next(new AppError(403, "EMAIL_NOT_VERIFIED", "Confirm your email address to use the platform console."));
     next();
 }
 
@@ -61,7 +67,33 @@ router.get("/admin/clinics", validate(clinicsQuery, "query"), async (req, res) =
         }),
         prisma.clinic.count({ where }),
     ]);
-    res.json({ items, page: p, pageSize, total });
+    const trusted = items.length
+        ? await prisma.clinicMember.groupBy({
+            by: ["clinicId"],
+            where: { clinicId: { in: items.map((c) => c.id) }, role: "OWNER", status: "ACTIVE", trustState: "TRUSTED" },
+            _count: { _all: true },
+        })
+        : [];
+    const trustedByClinic = new Map(trusted.map((row) => [row.clinicId, row._count._all]));
+    res.json({ items: items.map((c) => ({ ...c, trustedOwners: trustedByClinic.get(c.id) ?? 0 })), page: p, pageSize, total });
+});
+
+// Owners of one clinic with their trust state, for the bootstrap re-confirmation (emails masked).
+router.get("/admin/clinics/:clinicId/owners", async (req, res) => {
+    res.json(await invitations.listOwnersForAdmin(parseIdParam(req.params.clinicId)));
+});
+
+// Bootstrap: for a clinic with no trusted owner, send a re-confirmation to one legacy owner.
+// The Super Admin only starts it; the owner must accept with their verified, matching email.
+router.post("/admin/clinics/:clinicId/owner-reconfirmations", bootstrapLimiter, validate(bootstrapSchema), async (req, res) => {
+    const result = await invitations.requestReconfirmation({
+        clinicId: parseIdParam(req.params.clinicId),
+        memberId: req.body.memberId,
+        actorUserId: req.session.user.id,
+        ipAddress: req.ip,
+        asAdmin: true,
+    });
+    res.status(201).json(result);
 });
 
 router.patch("/admin/clinics/:clinicId", validate(clinicStatusSchema), async (req, res) => {
@@ -90,14 +122,14 @@ router.get("/admin/users", validate(usersQuery, "query"), async (req, res) => {
     const [items, total] = await Promise.all([
         prisma.user.findMany({
             where,
-            select: { id: true, name: true, email: true, platformRole: true, locale: true, createdAt: true, _count: { select: { memberships: true } } },
+            select: { id: true, name: true, email: true, platformRole: true, locale: true, createdAt: true, emailVerifiedAt: true, _count: { select: { memberships: true } } },
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             skip: (p - 1) * pageSize,
             take: pageSize,
         }),
         prisma.user.count({ where }),
     ]);
-    res.json({ items, page: p, pageSize, total });
+    res.json({ items: items.map(({ emailVerifiedAt, ...u }) => ({ ...u, emailVerified: emailVerifiedAt !== null })), page: p, pageSize, total });
 });
 
 router.patch("/admin/users/:userId", validate(platformRoleSchema), async (req, res) => {

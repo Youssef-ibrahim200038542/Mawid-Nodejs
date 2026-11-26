@@ -13,6 +13,9 @@ export default defineConfig({
     server: {
         port: 5173,
         strictPort: true,
+        // The dev email outbox (../var/mail-outbox) holds live account links. It is outside the
+        // Vite root already; deny it explicitly too, keeping Vite's default deny list.
+        fs: { deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", "**/var/mail-outbox/**"] },
         proxy: {
             "/api": { target: apiTarget, changeOrigin: false },
         },

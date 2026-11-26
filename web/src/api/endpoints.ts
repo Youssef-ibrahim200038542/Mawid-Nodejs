@@ -8,8 +8,12 @@ const clinicPath = (slug: string) => `/clinics/${enc(slug)}`;
 export const authApi = {
     me: () => get<T.MePayload>("/auth/me"),
     login: (body: { email: string; password: string }) => post<T.AuthPayload>("/auth/login", body),
-    signup: (body: { name: string; email: string; password: string; locale?: T.Locale }) => post<T.AuthPayload>("/auth/signup", body),
+    signup: (body: { name: string; email: string; password: string; locale?: T.Locale }) => post<T.AcceptedPayload>("/auth/signup", body),
     logout: () => post<void>("/auth/logout", {}),
+    verifyEmail: (token: string) => post<{ verified: true }>("/auth/verify-email", { token }),
+    resendVerification: () => post<{ delivery: T.Delivery }>("/auth/verify-email/resend", {}),
+    forgotPassword: (email: string) => post<T.AcceptedPayload>("/auth/password/forgot", { email }),
+    resetPassword: (token: string, password: string) => post<void>("/auth/password/reset", { token, password }),
     updateMe: (body: { name?: string; locale?: T.Locale }) => patch<{ user: T.User }>("/auth/me", body),
 };
 
@@ -39,9 +43,20 @@ export const clinicsApi = {
     update: (slug: string, body: Partial<Pick<T.Clinic, "name" | "timezone" | "defaultLocale" | "phone" | "email" | "address" | "city">>) =>
         patch<{ clinic: T.Clinic }>(clinicPath(slug), body),
     members: (slug: string, query: { page?: number; pageSize?: number }) => get<T.Paged<T.Member>>(`${clinicPath(slug)}/members`, query),
-    addMember: (slug: string, body: { email: string; role: T.Role }) => post<{ member: T.Member }>(`${clinicPath(slug)}/members`, body),
+    requestReconfirmation: (slug: string, memberId: number) => post<T.InvitationResult>(`${clinicPath(slug)}/members/${memberId}/reconfirmations`, {}),
     updateMember: (slug: string, memberId: number, body: { role?: T.Role; status?: T.MemberStatus }) =>
         patch<{ member: T.Member }>(`${clinicPath(slug)}/members/${memberId}`, body),
+};
+
+export const invitationsApi = {
+    list: (slug: string) => get<{ items: T.Invitation[] }>(`${clinicPath(slug)}/invitations`),
+    create: (slug: string, body: { email: string; role: T.Role }) => post<T.InvitationResult>(`${clinicPath(slug)}/invitations`, body),
+    resend: (slug: string, id: number) => post<T.InvitationResult>(`${clinicPath(slug)}/invitations/${id}/resend`, {}),
+    revoke: (slug: string, id: number) => post<{ invitation: T.Invitation }>(`${clinicPath(slug)}/invitations/${id}/revoke`, {}),
+    // The token is sent in the body only, never in a URL.
+    preview: (token: string) => post<T.InvitationPreview>("/invitations/preview", { token }),
+    accept: (token: string) => post<{ clinic: { slug: string; name: string }; role: T.Role; kind: T.InvitationKind }>("/invitations/accept", { token }),
+    decline: (token: string) => post<void>("/invitations/decline", { token }),
 };
 
 type Bilingual = { nameEn: string; nameAr?: string | null };
@@ -147,4 +162,6 @@ export const adminApi = {
     users: (query: { q?: string; page?: number; pageSize?: number }) => get<T.Paged<T.AdminUser>>("/admin/users", query),
     setUserRole: (id: number, platformRole: T.PlatformRole) => patch<{ user: Pick<T.AdminUser, "id" | "name" | "email" | "platformRole"> }>(`/admin/users/${id}`, { platformRole }),
     auditLogs: (query: { clinicId?: number; action?: string; page?: number; pageSize?: number }) => get<T.Paged<T.AuditEntry>>("/admin/audit-logs", query),
+    clinicOwners: (id: number) => get<{ items: T.AdminClinicOwner[] }>(`/admin/clinics/${id}/owners`),
+    requestOwnerReconfirmation: (id: number, memberId: number) => post<T.InvitationResult>(`/admin/clinics/${id}/owner-reconfirmations`, { memberId }),
 };

@@ -13,6 +13,13 @@
         </p>
     <% } %>
 
+    <% if (typeof sent !== "undefined" && sent) { %>
+        <p role="status" style="color: #0b6e4f; background: #ecf6f1; padding: 12px; border-radius: 6px;">
+            Check your inbox. If this address can be used, we've sent a link to confirm it. Then log in.
+        </p>
+        <p style="text-align: center;"><a href="/login">Log in</a></p>
+    <% } else { %>
+
     <form action="/signup" method="POST">
 
         <div style="margin-bottom: 20px;">
@@ -71,6 +78,7 @@
         </button>
 
     </form>
+    <% } %>
 </div>
 
 <%- include("partials/footer") %>

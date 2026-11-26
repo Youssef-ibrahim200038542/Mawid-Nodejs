@@ -14,3 +14,6 @@ skills-lock.json
 
 # Local database backups (contain password hashes and sessions)
 backups/
+
+# Local development email outbox (EMAIL_PROVIDER=outbox) — contains live account links
+var/

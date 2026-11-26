@@ -27,12 +27,16 @@ const doctorSelect = {
         select: { service: { select: { id: true, nameEn: true, nameAr: true, durationMinutes: true, isActive: true } } },
         orderBy: { serviceId: "asc" },
     },
+    member: { select: { status: true, trustState: true } },
 };
 
+// `bookable` mirrors what the booking engine enforces: an active profile on an ACTIVE, TRUSTED membership.
 function present(doctor) {
-    const { specialties, services, ...rest } = doctor;
+    const { specialties, services, member, ...rest } = doctor;
     return {
         ...rest,
+        memberTrustState: member.trustState,
+        bookable: rest.isActive && member.status === "ACTIVE" && member.trustState === "TRUSTED",
         specialties: specialties.map(({ specialty }) => specialty),
         services: services.map(({ service }) => service),
     };
@@ -83,10 +87,13 @@ async function createDoctor(tenant, { input, ipAddress }) {
         return await prisma.$transaction(async (tx) => {
             const member = await tx.clinicMember.findFirst({
                 where: { id: memberId, clinicId: tenant.clinicId, status: "ACTIVE" },
-                select: { id: true, role: true },
+                select: { id: true, role: true, trustState: true },
             });
             if (!member) {
                 throw new AppError(400, "INVALID_MEMBER", "That person isn't an active member of this clinic.");
+            }
+            if (member.trustState !== "TRUSTED") {
+                throw new AppError(400, "MEMBER_NOT_TRUSTED", "This member must re-confirm their access before getting a doctor profile.");
             }
             if (!doctorRoles.has(member.role)) {
                 throw new AppError(400, "MEMBER_CANNOT_BE_DOCTOR", "Only owners and doctors can have a doctor profile.");

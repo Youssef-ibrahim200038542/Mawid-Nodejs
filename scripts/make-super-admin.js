@@ -8,8 +8,10 @@ const { recordAudit } = require("../src/lib/audit");
     const email = (process.argv[2] || "").trim().toLowerCase();
     if (!email) throw new Error("Usage: node scripts/make-super-admin.js <email>");
     const [{ db }] = await prisma.$queryRaw`SELECT DATABASE() AS db`;
-    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, platformRole: true } });
+    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, platformRole: true, emailVerifiedAt: true } });
     if (!user) throw new Error(`No user with email ${email} in database "${db}".`);
+    // Account security (H1): a platform administrator must have proved control of the address.
+    if (!user.emailVerifiedAt) throw new Error(`The account's email is not verified yet (database "${db}"). Verify it first.`);
     if (user.platformRole === "SUPER_ADMIN") {
         console.log(`Already a super admin (database "${db}").`);
     } else {

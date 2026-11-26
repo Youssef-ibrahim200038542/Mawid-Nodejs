@@ -15,11 +15,20 @@ model User {
   createdAt      DateTime       @default(now()) @map("created_at")
   platformRole   PlatformRole   @default(USER) @map("platform_role")
   locale         String         @default("en") @db.VarChar(5)
-  events         Event[]
-  memberships    ClinicMember[]
-  patientRecords Patient[]
-  notifications  Notification[]
-  auditLogs      AuditLog[]
+  // Account security (H1). NULL = the account never proved it controls its email address.
+  emailVerifiedAt     DateTime?          @map("email_verified_at")
+  // Stored in every session as `sv`; incrementing it invalidates all existing sessions.
+  sessionVersion      Int                @default(0) @map("session_version")
+  events              Event[]
+  memberships         ClinicMember[]
+  patientRecords      Patient[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  authTokens          AuthToken[]
+  invitationsSent     ClinicInvitation[] @relation("InvitationInvitedBy")
+  invitationsAccepted ClinicInvitation[] @relation("InvitationAcceptedBy")
+  invitationsDeclined ClinicInvitation[] @relation("InvitationDeclinedBy")
+  invitationsRevoked  ClinicInvitation[] @relation("InvitationRevokedBy")
 
   @@map("users")
 }
@@ -65,6 +74,7 @@ model Clinic {
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   members            ClinicMember[]
+  invitations        ClinicInvitation[]
   auditLogs          AuditLog[]
   specialties        Specialty[]
   services           Service[]
@@ -86,16 +96,171 @@ model ClinicMember {
   status        MemberStatus   @default(ACTIVE)
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
+  // Membership trust (H1). Every membership that existed before account security is
+  // LEGACY_UNREVIEWED; trust is only ever granted by src/modules/membership/membership-trust.service.js
+  // (verified clinic creation, or an accepted invitation / re-confirmation). CHECK constraints in
+  // the migration keep these four columns consistent.
+  trustState             MemberTrustState   @default(LEGACY_UNREVIEWED) @map("trust_state")
+  trustSource            MemberTrustSource? @map("trust_source")
+  trustedAt              DateTime?          @map("trusted_at")
+  trustedViaInvitationId Int?               @map("trusted_via_invitation_id")
   // Restrict: deleting a clinic or user must never silently cascade through tenant data.
-  clinic        Clinic         @relation(fields: [clinicId], references: [id], onDelete: Restrict)
-  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
-  doctorProfile DoctorProfile?
+  clinic                 Clinic             @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  doctorProfile          DoctorProfile?
+  // The invitation that proved this membership; same clinic (composite key).
+  trustedViaInvitation   ClinicInvitation?  @relation("MemberTrustedVia", fields: [clinicId, trustedViaInvitationId], references: [clinicId, id], onDelete: Restrict, onUpdate: NoAction)
+  reconfirmations       ClinicInvitation[] @relation("InvitationMember")
 
   @@unique([clinicId, userId])
   // Target for composite foreign keys (clinic_id, member_id) so child rows cannot cross tenants.
   @@unique([clinicId, id])
+  // One invitation can establish trust for one membership only.
+  @@unique([clinicId, trustedViaInvitationId])
   @@index([userId])
   @@map("clinic_members")
+}
+
+enum MemberTrustState {
+  LEGACY_UNREVIEWED
+  TRUSTED
+}
+
+enum MemberTrustSource {
+  CLINIC_CREATOR
+  INVITATION
+  RECONFIRMATION
+}
+
+enum InvitationKind {
+  NEW_MEMBER
+  RECONFIRM
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  REVOKED
+}
+
+// Staff invitations and legacy-membership re-confirmations. The raw token only exists in memory
+// while the email is sent; token_hash rotates on every (re)send so older links stop working.
+// active_key = sha256 of the "one open invitation" identity; NULL once the invitation is final,
+// so the UNIQUE index enforces at most one PENDING invitation per clinic+email (or per member).
+model ClinicInvitation {
+  id               Int                 @id @default(autoincrement())
+  clinicId         Int                 @map("clinic_id")
+  kind             InvitationKind
+  memberId         Int?                @map("member_id")
+  email            String              @db.VarChar(255)
+  role             ClinicRole
+  status           InvitationStatus    @default(PENDING)
+  activeKey        String?             @unique @map("active_key") @db.Char(64)
+  tokenHash        String              @unique @map("token_hash") @db.Char(64)
+  expiresAt        DateTime            @map("expires_at")
+  invitedByUserId  Int?                @map("invited_by_user_id")
+  lastSentAt       DateTime            @map("last_sent_at")
+  sendCount        Int                 @default(1) @map("send_count")
+  deliveryStatus   EmailDeliveryStatus @default(PENDING) @map("delivery_status")
+  deliveryError    String?             @map("delivery_error") @db.VarChar(64)
+  acceptedAt       DateTime?           @map("accepted_at")
+  acceptedByUserId Int?                @map("accepted_by_user_id")
+  declinedAt       DateTime?           @map("declined_at")
+  declinedByUserId Int?                @map("declined_by_user_id")
+  revokedAt        DateTime?           @map("revoked_at")
+  revokedByUserId  Int?                @map("revoked_by_user_id")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  clinic           Clinic              @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  // RECONFIRM only: the existing membership being re-confirmed, in the same clinic.
+  member           ClinicMember?       @relation("InvitationMember", fields: [clinicId, memberId], references: [clinicId, id], onDelete: Restrict, onUpdate: NoAction)
+  invitedBy        User?               @relation("InvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  acceptedBy       User?               @relation("InvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  declinedBy       User?               @relation("InvitationDeclinedBy", fields: [declinedByUserId], references: [id], onDelete: SetNull)
+  revokedBy        User?               @relation("InvitationRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  trustedMember    ClinicMember?       @relation("MemberTrustedVia")
+
+  @@unique([clinicId, id])
+  @@index([clinicId, status])
+  @@index([email, status])
+  @@map("clinic_invitations")
+}
+
+enum AuthTokenPurpose {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+  // Not a usable token: a durable record of an "you already have an account" email.
+  ACCOUNT_NOTICE
+}
+
+enum AuthTokenConsumedReason {
+  USED
+  SUPERSEDED
+  EMAIL_CHANGED
+  NOTICE
+}
+
+// QUEUED: generation stored, provider not called yet. SENDING: a provider attempt started
+// (send_attempts was incremented). See docs/architecture/07-account-security.md.
+enum AuthDeliveryStatus {
+  QUEUED
+  SENDING
+  SENT
+  RETRYABLE
+  FAILED
+  SKIPPED
+  REPLACED
+}
+
+// Email verification / password reset tokens and account notices. Each row is one delivery
+// generation; a retry creates a new row (new token) that replaces the previous one.
+model AuthToken {
+  id              Int                      @id @default(autoincrement())
+  userId          Int                      @map("user_id")
+  purpose         AuthTokenPurpose
+  // Normalised email the token was issued for; a token is invalid once the account email differs.
+  email           String                   @db.VarChar(255)
+  tokenHash       String                   @unique @map("token_hash") @db.Char(64)
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  expiresAt       DateTime                 @map("expires_at")
+  consumedAt      DateTime?                @map("consumed_at")
+  consumedReason  AuthTokenConsumedReason? @map("consumed_reason")
+  // When the first generation of this delivery chain was created (bounds recovery).
+  chainStartedAt  DateTime                 @map("chain_started_at")
+  replacesTokenId Int?                     @unique @map("replaces_token_id")
+  // Actual provider send attempts made for the whole chain (inherited by replacements).
+  sendAttempts    Int                      @default(0) @map("send_attempts") @db.SmallInt
+  deliveryStatus  AuthDeliveryStatus       @default(QUEUED) @map("delivery_status")
+  nextRetryAt     DateTime?                @map("next_retry_at")
+  deliveryError   String?                  @map("delivery_error") @db.VarChar(64)
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replaces        AuthToken?               @relation("AuthTokenReplacement", fields: [replacesTokenId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  replacedBy      AuthToken?               @relation("AuthTokenReplacement")
+
+  @@index([userId, purpose, consumedAt])
+  @@index([deliveryStatus, nextRetryAt])
+  @@index([expiresAt])
+  @@map("auth_tokens")
+}
+
+enum AuthRateKind {
+  SIGNUP
+  PASSWORD_RESET
+}
+
+// Fixed-window per-email counters for signup / password reset. key_hash is an HMAC of the
+// normalised email (never the email itself, never an IP). Incremented with one atomic
+// INSERT … ON DUPLICATE KEY UPDATE, so concurrent requests on any instance cannot bypass it.
+model AuthRateBucket {
+  kind         AuthRateKind
+  keyHash      String       @map("key_hash") @db.Char(64)
+  windowStart  DateTime     @map("window_start")
+  requestCount Int          @default(1) @map("request_count")
+
+  @@id([kind, keyHash, windowStart])
+  @@index([windowStart])
+  @@map("auth_rate_buckets")
 }
 
 model AuditLog {

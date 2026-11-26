@@ -4,14 +4,17 @@ const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 // is required before running more than one instance.
 // keyByUser: limit per logged-in user instead of per IP (many patients can share one IP,
 // e.g. an office or mobile-carrier NAT); anonymous requests still fall back to the IP.
-function createLimiter({ windowMs, limit, skipSuccessfulRequests = false, keyByUser = false }) {
+// keyGenerator (optional): a custom key, e.g. per owner + clinic. It must never contain a raw
+// email address; use lib/tokens.keyedHash for anything derived from one.
+function createLimiter({ windowMs, limit, skipSuccessfulRequests = false, keyByUser = false, keyGenerator = null }) {
     return rateLimit({
         windowMs,
         limit,
         skipSuccessfulRequests,
         standardHeaders: "draft-8",
         legacyHeaders: false,
-        ...(keyByUser
+        ...(keyGenerator ? { keyGenerator } : {}),
+        ...(keyByUser && !keyGenerator
             ? {
                 keyGenerator(req) {
                     const userId = req.session && req.session.user && req.session.user.id;

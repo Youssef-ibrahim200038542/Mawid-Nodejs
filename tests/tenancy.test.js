@@ -25,7 +25,7 @@ test("loadTenant scopes the lookup to the session user and URL slug, ignoring cl
     let receivedWhere;
     stub(t, prisma.clinicMember, "findFirst", async ({ where }) => {
         receivedWhere = where;
-        return { id: 10, role: "OWNER", clinic: clinicA };
+        return { id: 10, role: "OWNER", trustState: "TRUSTED", user: { emailVerifiedAt: new Date() }, clinic: clinicA };
     });
 
     const req = {
@@ -45,6 +45,26 @@ test("loadTenant scopes the lookup to the session user and URL slug, ignoring cl
     assert.equal(req.tenant.clinicId, 1);
     assert.equal(req.tenant.role, "OWNER");
     assert.ok(Object.isFrozen(req.tenant));
+});
+
+test("loadTenant refuses a legacy (not re-confirmed) membership for every role, even with a verified email", async (t) => {
+    for (const role of ["OWNER", "DOCTOR", "RECEPTIONIST"]) {
+        stub(t, prisma.clinicMember, "findFirst", async () => ({ id: 10, role, trustState: "LEGACY_UNREVIEWED", user: { emailVerifiedAt: new Date() }, clinic: clinicA }));
+        const req = { params: { clinicSlug: "clinic-a" }, session: { user: { id: 7 } } };
+        const error = await runMiddleware(loadTenant, req);
+        assert.equal(error.status, 403);
+        assert.equal(error.code, "MEMBERSHIP_RECONFIRMATION_REQUIRED");
+        assert.equal(req.tenant, undefined);
+    }
+});
+
+test("loadTenant refuses a trusted membership whose account email is not verified", async (t) => {
+    stub(t, prisma.clinicMember, "findFirst", async () => ({ id: 10, role: "OWNER", trustState: "TRUSTED", user: { emailVerifiedAt: null }, clinic: clinicA }));
+    const req = { params: { clinicSlug: "clinic-a" }, session: { user: { id: 7 } } };
+    const error = await runMiddleware(loadTenant, req);
+    assert.equal(error.status, 403);
+    assert.equal(error.code, "EMAIL_NOT_VERIFIED");
+    assert.equal(req.tenant, undefined);
 });
 
 test("loadTenant returns 404 when the user is not a member of the clinic (cross-tenant access)", async (t) => {
@@ -144,9 +164,11 @@ test("listMembers filters by the tenant's clinic and never selects password hash
     assert.deepEqual(result, { items: [], page: 2, pageSize: 25, total: 0 });
 });
 
-test("createClinic makes the creator OWNER and maps a duplicate slug to 409", async (t) => {
+test("createClinic makes the verified creator a TRUSTED OWNER and maps a duplicate slug to 409", async (t) => {
     const created = [];
+    let verifiedAt = new Date();
     const tx = {
+        $queryRaw: async () => [{ id: 7, emailVerifiedAt: verifiedAt }],
         clinic: { create: async () => ({ id: 5, slug: "nile-dental" }) },
         clinicMember: { create: async (args) => created.push(args.data) },
         auditLog: { create: async () => {} },
@@ -154,7 +176,17 @@ test("createClinic makes the creator OWNER and maps a duplicate slug to 409", as
     stub(t, prisma, "$transaction", async (callback) => callback(tx));
 
     await clinicService.createClinic({ actorUserId: 7, ipAddress: null, input: { name: "Nile Dental", slug: "nile-dental" } });
-    assert.deepEqual(created, [{ clinicId: 5, userId: 7, role: "OWNER" }]);
+    assert.equal(created.length, 1);
+    const { trustedAt, ...membership } = created[0];
+    assert.ok(trustedAt instanceof Date);
+    assert.deepEqual(membership, { clinicId: 5, userId: 7, role: "OWNER", trustState: "TRUSTED", trustSource: "CLINIC_CREATOR" });
+
+    verifiedAt = null;
+    await assert.rejects(clinicService.createClinic({ actorUserId: 7, ipAddress: null, input: { name: "Nile Dental", slug: "nile-dental" } }), {
+        status: 403,
+        code: "EMAIL_NOT_VERIFIED",
+    });
+    assert.equal(created.length, 1);
 
     prisma.$transaction = async () => {
         throw Object.assign(new Error("Unique constraint failed"), { code: "P2002" });

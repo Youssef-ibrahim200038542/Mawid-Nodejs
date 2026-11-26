@@ -127,61 +127,32 @@ test("login rejects missing or invalid fields before querying users", async (t) 
     }
 });
 
-test("signup handles a duplicate email discovered during insert", async (t) => {
-    stubDependencies(t, {
-        findByEmail: async () => null,
-        hash: async () => "hashed-password",
-        create: async () => {
-            throw Object.assign(new Error("Unique constraint"), { code: "P2002" });
-        },
+test("signup gives the same answer for any valid address and never creates a session", async (t) => {
+    const calls = [];
+    const original = authController.accountService.register;
+    authController.accountService.register = async (input) => {
+        calls.push(input);
+    };
+    t.after(() => {
+        authController.accountService.register = original;
     });
 
-    const req = makeRequest({
-        name: " Ada ",
-        email: " ADA@example.com ",
-        password: "correct-horse",
-    });
-    const res = makeResponse();
-    await authController.signup(req, res);
+    for (const email of [" ADA@example.com ", "someone-else@example.com"]) {
+        const req = makeRequest({ name: " Ada ", email, password: "correct-horse" });
+        const res = makeResponse();
+        await authController.signup(req, res);
 
-    assert.equal(res.statusCode, 409);
-    assert.equal(res.locals.error, "That email is already registered.");
-    assert.equal(res.locals.values.email, "ada@example.com");
-    assert.equal(req.session.regenerated, false);
-});
-
-test("signup stores a user and persists a regenerated session", async (t) => {
-    let createdUser;
-    stubDependencies(t, {
-        findByEmail: async () => null,
-        hash: async (password, rounds) => {
-            assert.equal(password, "correct-horse");
-            assert.equal(rounds, 12);
-            return "hashed-password";
-        },
-        create: async (name, email, passwordHash) => {
-            createdUser = { name, email, passwordHash };
-            return 42;
-        },
-    });
-
-    const req = makeRequest({
-        name: " Ada ",
-        email: " ADA@example.com ",
-        password: "correct-horse",
-    });
-    const res = makeResponse();
-    await authController.signup(req, res);
-
-    assert.deepEqual(createdUser, {
-        name: "Ada",
-        email: "ada@example.com",
-        passwordHash: "hashed-password",
-    });
-    assert.deepEqual(req.session.user, { id: 42, name: "Ada" });
-    assert.equal(req.session.regenerated, true);
-    assert.equal(req.session.saved, true);
-    assert.equal(res.redirectedTo, "/dashboard");
+        assert.equal(res.statusCode, 202);
+        assert.equal(res.view, "signup");
+        assert.equal(res.locals.sent, true);
+        assert.equal(res.locals.error, null);
+        assert.equal(req.session.regenerated, false);
+        assert.equal(req.session.user, undefined);
+    }
+    assert.deepEqual(calls.map(({ name, email, password }) => ({ name, email, password })), [
+        { name: "Ada", email: "ada@example.com", password: "correct-horse" },
+        { name: "Ada", email: "someone-else@example.com", password: "correct-horse" },
+    ]);
 });
 
 test("login rejects wrong credentials without creating a session", async (t) => {
@@ -207,8 +178,16 @@ test("login rejects wrong credentials without creating a session", async (t) => 
 
 test("login persists a regenerated session for valid credentials", async (t) => {
     stubDependencies(t, {
-        findByEmail: async () => ({ id: 42, name: "Ada", passwordHash: "stored-hash" }),
+        findByEmail: async () => ({ id: 42, name: "Ada", passwordHash: "stored-hash", sessionVersion: 3 }),
         compare: async (password, hash) => password === "correct-horse" && hash === "stored-hash",
+    });
+    let snapshot;
+    const original = authController.accountService.confirmLoginSnapshot;
+    authController.accountService.confirmLoginSnapshot = async (req, value) => {
+        snapshot = value;
+    };
+    t.after(() => {
+        authController.accountService.confirmLoginSnapshot = original;
     });
 
     const req = makeRequest({
@@ -218,10 +197,35 @@ test("login persists a regenerated session for valid credentials", async (t) => 
     const res = makeResponse();
     await authController.login(req, res);
 
-    assert.deepEqual(req.session.user, { id: 42, name: "Ada" });
+    assert.deepEqual(req.session.user, { id: 42, name: "Ada", sv: 3 });
+    assert.deepEqual(snapshot, { id: 42, passwordHash: "stored-hash", sessionVersion: 3 });
     assert.equal(req.session.regenerated, true);
     assert.equal(req.session.saved, true);
     assert.equal(res.redirectedTo, "/dashboard");
+});
+
+test("login fails like a wrong password when a reset lands between the check and the session", async (t) => {
+    stubDependencies(t, {
+        findByEmail: async () => ({ id: 42, name: "Ada", passwordHash: "stored-hash", sessionVersion: 0 }),
+        compare: async () => true,
+    });
+    const original = authController.accountService.confirmLoginSnapshot;
+    authController.accountService.confirmLoginSnapshot = async () => {
+        throw Object.assign(new Error("Wrong email or password."), { code: "INVALID_CREDENTIALS", status: 401 });
+    };
+    t.after(() => {
+        authController.accountService.confirmLoginSnapshot = original;
+    });
+
+    const res = makeResponse();
+    await authController.login(makeRequest({ email: "ada@example.com", password: "old-password" }), res);
+    assert.equal(res.statusCode, 401);
+    assert.equal(res.locals.error, "Wrong email or password.");
+    assert.equal(res.redirectedTo, undefined);
+});
+
+test("establishSession refuses to run without the snapshot session version", async () => {
+    await assert.rejects(authController.establishSession(makeRequest({}), { id: 1, name: "A" }), /session version/);
 });
 
 test("login still runs bcrypt when the email is unknown, so timing does not reveal accounts", async (t) => {

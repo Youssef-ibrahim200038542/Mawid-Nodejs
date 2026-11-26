@@ -4,6 +4,8 @@
 // .env.test only, DB_NAME/DATABASE_URL must be mawid_test, MAWID_EXPECT_DB enforced by db-guard.
 // Note: `npm run test:integration` empties mawid_test, so data created here is temporary.
 process.env.PORT = process.env.PORT || "3100";
+// Local dev stack: account emails go to var/mail-outbox/ (git-ignored) unless .env.test says otherwise.
+process.env.EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || "outbox";
 require("../tests/integration/env");
 process.env.LOG_LEVEL = process.env.MAWID_LOG_LEVEL || "info";
 require("../src/index");

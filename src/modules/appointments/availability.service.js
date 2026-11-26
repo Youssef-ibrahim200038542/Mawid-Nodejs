@@ -38,7 +38,8 @@ async function getAvailability({ clinic, serviceId, doctorId, fromDate, toDate, 
         where: {
             clinicId: clinic.id,
             isActive: true,
-            member: { status: "ACTIVE" },
+            // Bookable only: active profile, active and TRUSTED membership (see booking-engine).
+            member: { status: "ACTIVE", trustState: "TRUSTED" },
             services: { some: { serviceId } },
             ...(doctorId ? { id: doctorId } : {}),
         },

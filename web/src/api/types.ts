@@ -9,9 +9,13 @@ export type AppointmentSource = "ONLINE" | "STAFF";
 export type ExceptionKind = "HOLIDAY" | "LEAVE" | "UNAVAILABLE";
 export type MemberStatus = "ACTIVE" | "DISABLED";
 export type ClinicStatus = "ACTIVE" | "SUSPENDED";
+export type TrustState = "LEGACY_UNREVIEWED" | "TRUSTED";
+export type TrustSource = "CLINIC_CREATOR" | "INVITATION" | "RECONFIRMATION";
+export type InvitationKind = "NEW_MEMBER" | "RECONFIRM";
+export type Delivery = "sent" | "skipped" | "failed" | "pending" | "unknown";
 
 export interface ApiErrorBody {
-    error: { status: number; code: string; message: string; details?: { path: string; code: string; message: string }[] };
+    error: { status: number; code: string; message: string; details?: { path: string; code: string; message: string }[] | { retryAfterSeconds?: number } };
 }
 
 export interface Paged<T> {
@@ -28,6 +32,7 @@ export interface User {
     email: string;
     platformRole: PlatformRole;
     locale: Locale;
+    emailVerified: boolean;
 }
 export interface MyClinic {
     id: number;
@@ -36,6 +41,7 @@ export interface MyClinic {
     timezone: string;
     defaultLocale: Locale;
     role: Role;
+    trustState: TrustState;
     memberId: number;
     doctorProfileId: number | null;
 }
@@ -45,6 +51,39 @@ export interface MePayload {
 }
 export interface AuthPayload extends MePayload {
     csrfToken: string;
+}
+export interface AcceptedPayload {
+    status: "check_email";
+    message: string;
+}
+
+// ---- invitations
+export interface Invitation {
+    id: number;
+    kind: InvitationKind;
+    email: string;
+    role: Role;
+    status: "PENDING" | "ACCEPTED" | "DECLINED" | "REVOKED";
+    memberId: number | null;
+    expiresAt: string;
+    expired: boolean;
+    lastSentAt: string;
+    sendCount: number;
+    delivery: Delivery;
+    createdAt: string;
+    invitedBy: { id: number; name: string } | null;
+}
+export interface InvitationPreview {
+    clinic: { name: string };
+    kind: InvitationKind;
+    role: Role;
+    expiresAt: string;
+    emailHint: string;
+    viewer: { matchesInvitation: boolean; emailVerified: boolean } | null;
+}
+export interface InvitationResult {
+    invitation: Invitation;
+    delivery: Delivery;
 }
 
 // ---- clinics (/clinics, /clinics/:slug)
@@ -66,8 +105,12 @@ export interface Member {
     id: number;
     role: Role;
     status: MemberStatus;
+    trustState: TrustState;
+    trustSource: TrustSource | null;
+    trustedAt: string | null;
     createdAt: string;
     user: { id: number; name: string; email: string };
+    pendingReconfirmation: { invitationId: number; expiresAt: string } | null;
 }
 
 // ---- clinic operations
@@ -112,6 +155,8 @@ export interface Doctor {
     yearsOfExperience: number | null;
     licenseNumber: string | null;
     isActive: boolean;
+    memberTrustState: TrustState;
+    bookable: boolean;
     createdAt: string;
     updatedAt: string;
     specialties: { id: number; nameEn: string; nameAr: string | null; isActive: boolean }[];
@@ -322,6 +367,14 @@ export interface AdminClinic {
     timezone: string;
     createdAt: string;
     _count: { members: number; doctors: number; appointments: number; patients: number };
+    trustedOwners: number;
+}
+export interface AdminClinicOwner {
+    memberId: number;
+    status: MemberStatus;
+    trustState: TrustState;
+    createdAt: string;
+    user: { id: number; name: string; emailHint: string; emailVerified: boolean };
 }
 export interface AdminUser {
     id: number;
@@ -330,5 +383,6 @@ export interface AdminUser {
     platformRole: PlatformRole;
     locale: Locale;
     createdAt: string;
+    emailVerified: boolean;
     _count: { memberships: number };
 }

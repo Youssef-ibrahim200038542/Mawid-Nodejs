@@ -1,6 +1,11 @@
 const bcrypt = require("bcrypt");
 const User = require("../models/user.model");
 const { issueCsrfToken } = require("../middleware/csrf");
+// Loaded lazily: account.service requires the database client, and tests stub its functions.
+const accountService = {
+    register: (...args) => require("../modules/auth/account.service").register(...args),
+    confirmLoginSnapshot: (...args) => require("../modules/auth/account.service").confirmLoginSnapshot(...args),
+};
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const bcryptMaxBytes = 72;
@@ -49,14 +54,20 @@ function validateLogin(values) {
     return null;
 }
 
-function establishSession(req, user) {
+// `sv` is the session_version read together with the password hash BEFORE the password check.
+// It is required (never re-read here): storing the version that was current when the credential
+// was verified is what lets a later password reset invalidate this session.
+function establishSession(req, user, { sv } = {}) {
+    if (!Number.isInteger(sv)) {
+        return Promise.reject(new Error("establishSession requires the session version from the credential snapshot."));
+    }
     return new Promise((resolve, reject) => {
         req.session.regenerate((error) => {
             if (error) {
                 return reject(error);
             }
 
-            req.session.user = { id: user.id, name: user.name };
+            req.session.user = { id: user.id, name: user.name, sv };
             // Fresh CSRF token for the new session, written in the same save as the user.
             issueCsrfToken(req);
             req.session.save((saveError) => {
@@ -69,48 +80,25 @@ function establishSession(req, user) {
     });
 }
 
-function isDuplicateEmailError(error) {
-    return error && error.code === "P2002";
-}
-
 function showSignup(req, res) {
-    res.render("signup", { error: null, values: { name: "", email: "" } });
+    res.render("signup", { error: null, sent: false, values: { name: "", email: "" } });
 }
 
+// Same account-security flow as POST /api/v1/auth/signup: one generic answer whether or not the
+// address already has an account, no session, the email goes out after the database commit.
 async function signup(req, res) {
     const values = formValues(req.body);
     const error = validateSignup(values);
     if (error) {
         return res.status(400).render("signup", {
             error,
+            sent: false,
             values: { name: values.name, email: values.email },
         });
     }
 
-    const existing = await User.findByEmail(values.email);
-    if (existing) {
-        return res.status(409).render("signup", {
-            error: "That email is already registered.",
-            values: { name: values.name, email: values.email },
-        });
-    }
-
-    const passwordHash = await bcrypt.hash(values.password, 12);
-    let id;
-    try {
-        id = await User.create(values.name, values.email, passwordHash);
-    } catch (createError) {
-        if (isDuplicateEmailError(createError)) {
-            return res.status(409).render("signup", {
-                error: "That email is already registered.",
-                values: { name: values.name, email: values.email },
-            });
-        }
-        throw createError;
-    }
-
-    await establishSession(req, { id, name: values.name });
-    res.redirect("/dashboard");
+    await accountService.register({ name: values.name, email: values.email, password: values.password, ipAddress: req.ip });
+    res.status(202).render("signup", { error: null, sent: true, values: { name: "", email: "" } });
 }
 
 function showLogin(req, res) {
@@ -127,6 +115,7 @@ async function login(req, res) {
         });
     }
 
+    // Snapshot: password hash and session version are read together, before the comparison.
     const user = await User.findByEmail(values.email);
     const passwordMatches = await bcrypt.compare(values.password, user ? user.passwordHash : dummyPasswordHash);
     if (!user || !passwordMatches) {
@@ -136,7 +125,15 @@ async function login(req, res) {
         });
     }
 
-    await establishSession(req, user);
+    await establishSession(req, user, { sv: user.sessionVersion ?? 0 });
+    try {
+        await accountService.confirmLoginSnapshot(req, { id: user.id, passwordHash: user.passwordHash, sessionVersion: user.sessionVersion ?? 0 });
+    } catch (snapshotError) {
+        if (snapshotError && snapshotError.code === "INVALID_CREDENTIALS") {
+            return res.status(401).render("login", { error: "Wrong email or password.", values: { email: values.email } });
+        }
+        throw snapshotError;
+    }
     res.redirect("/dashboard");
 }
 
@@ -159,6 +156,7 @@ module.exports = {
     logout,
     // Shared with the JSON auth API (src/modules/auth).
     establishSession,
+    accountService,
     dummyPasswordHash,
     bcryptMaxBytes,
 };

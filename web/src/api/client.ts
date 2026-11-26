@@ -26,6 +26,17 @@ export function setCsrfToken(token: string | null) {
     csrfToken = token;
 }
 
+// Called when an authenticated request answers 401 (session expired, or revoked after a password
+// reset). The auth layer clears its state, and route guards send the user to the login page.
+type UnauthenticatedListener = (code: string) => void;
+const unauthenticatedListeners = new Set<UnauthenticatedListener>();
+export function onUnauthenticated(listener: UnauthenticatedListener) {
+    unauthenticatedListeners.add(listener);
+    return () => unauthenticatedListeners.delete(listener);
+}
+// Credential checks answer 401 by design and must not log anyone out.
+const credentialPaths = new Set(["/auth/login", "/auth/me"]);
+
 async function fetchCsrf(): Promise<string> {
     if (csrfToken) return csrfToken;
     csrfPromise ??= fetch(`${base}/auth/csrf`, { credentials: "same-origin", headers: { accept: "application/json" } })
@@ -87,6 +98,10 @@ export async function api<T>(path: string, options: RequestOptions = {}, retried
         if (error?.code === "CSRF_INVALID" && !retried) {
             csrfToken = null;
             return api<T>(path, options, true);
+        }
+        if (res.status === 401 && !credentialPaths.has(path)) {
+            csrfToken = null;
+            for (const listener of unauthenticatedListeners) listener(error?.code || "UNAUTHENTICATED");
         }
         throw new ApiError(res.status, error?.code || "REQUEST_FAILED", error?.message || "The request could not be completed.", error?.details);
     }

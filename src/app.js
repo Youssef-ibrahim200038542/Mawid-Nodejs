@@ -4,6 +4,7 @@ const helmet = require("helmet");
 const pinoHttp = require("pino-http");
 const logger = require("./lib/logger");
 const sessionMiddleware = require("./session");
+const { sessionGuard } = require("./middleware/session-guard");
 const errorHandler = require("./middleware/error-handler");
 const api = require("./api");
 const authRoutes = require("./routes/auth.routes");
@@ -23,6 +24,8 @@ app.use(helmet());
 app.use(pinoHttp({ logger }));
 app.use(express.urlencoded({ extended: false, limit: "20kb" }));
 app.use(sessionMiddleware);
+// Session version check for every request (API and legacy pages); see middleware/session-guard.js.
+app.use(sessionGuard);
 
 app.use((req, res, next) => {
     res.locals.user = req.session.user || null;
