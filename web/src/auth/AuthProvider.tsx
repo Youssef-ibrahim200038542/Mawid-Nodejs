@@ -82,7 +82,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             logout: async () => {
                 await authApi.logout().catch(() => undefined);
                 setCsrfToken(null);
-                queryClient.clear();
+                // Not queryClient.clear(): that detaches the mounted "me" observer and the header
+                // kept showing the signed-out user. Drop everything else, then set "me" to null.
+                queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "auth" });
                 queryClient.setQueryData(meQueryKey, null);
             },
             refresh: () => queryClient.invalidateQueries({ queryKey: meQueryKey }),

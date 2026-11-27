@@ -25,6 +25,7 @@ import { can, type Permission } from "@/auth/permissions";
 import type { MyClinic } from "@/api/types";
 import { LocaleSwitch, NotificationBell, SkipLink, UserMenu, Wordmark } from "@/components/shell/Shell";
 import NotFoundPage from "@/pages/NotFoundPage";
+import { ButtonLink, EmptyState } from "@/components/ui/primitives";
 import { cx } from "@/lib/cx";
 
 export interface StaffContext {
@@ -59,6 +60,19 @@ export default function StaffLayout() {
     }, [location.pathname]);
 
     if (!clinic) return <NotFoundPage />;
+    // Mirrors loadTenant (the API refuses with 403 anyway): a legacy membership awaiting
+    // re-confirmation, or an unconfirmed email, never opens the workspace.
+    if (clinic.trustState !== "TRUSTED" || !me?.user.emailVerified) {
+        return (
+            <div className="mx-auto max-w-2xl px-4 py-16">
+                <EmptyState
+                    title={clinic.trustState !== "TRUSTED" ? t("workspace.awaitingTitle") : t("errors.EMAIL_NOT_VERIFIED")}
+                    body={clinic.trustState !== "TRUSTED" ? t("workspace.reconfirmPageBody") : t("account.bannerText")}
+                    action={<ButtonLink to="/workspace">{t("workspace.switchClinic")}</ButtonLink>}
+                />
+            </div>
+        );
+    }
     const allowed = (p: Permission) => can(clinic.role, p);
     const base = `/c/${slug}`;
 

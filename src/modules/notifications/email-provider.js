@@ -58,8 +58,69 @@ const providers = {
     },
 };
 
-// Real providers go here (none are configured in this version).
-const productionProviders = [];
+// Integration tests only: keeps messages in memory so a test can follow the emailed link.
+// Refused unless NODE_ENV=test.
+const memorySent = [];
+providers.memory = {
+    name: "memory",
+    enabled: true,
+    sent: memorySent,
+    async send(message) {
+        if (process.env.NODE_ENV !== "test") throw new EmailDeliveryError("MEMORY_PROVIDER_TEST_ONLY", { permanent: true });
+        memorySent.push({ ...message, at: new Date() });
+        return { status: "SENT" };
+    },
+};
+
+// SMTP (production). Settings come only from the environment:
+//   SMTP_HOST, SMTP_PORT (default 587), SMTP_SECURE ("true" = implicit TLS, e.g. port 465),
+//   SMTP_USER, SMTP_PASSWORD, EMAIL_FROM. STARTTLS is required on non-implicit-TLS ports.
+// Classification: SMTP 5xx replies are permanent (bad recipient / rejected); 4xx replies, network
+// errors, timeouts and authentication/config errors are retryable (bounded by the attempt limit).
+let smtpTransport = null;
+function smtpTransporter() {
+    if (!smtpTransport) {
+        const nodemailer = require("nodemailer");
+        smtpTransport = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: Number(process.env.SMTP_PORT || 587),
+            secure: process.env.SMTP_SECURE === "true",
+            requireTLS: process.env.SMTP_SECURE !== "true",
+            auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : undefined,
+            connectionTimeout: 7000,
+            greetingTimeout: 7000,
+            socketTimeout: 7000,
+            logger: false,
+            debug: false,
+        });
+    }
+    return smtpTransport;
+}
+
+function classifySmtpError(error) {
+    const code = Number(error && error.responseCode);
+    if (code >= 500 && code < 600) return new EmailDeliveryError(`SMTP_${code}`, { permanent: true });
+    if (code >= 400 && code < 500) return new EmailDeliveryError(`SMTP_${code}`);
+    const name = String((error && error.code) || "SMTP_ERROR").replace(/[^A-Z0-9_]/gi, "").slice(0, 40) || "SMTP_ERROR";
+    return new EmailDeliveryError(name);
+}
+
+providers.smtp = {
+    name: "smtp",
+    enabled: true,
+    async send({ to, subject, text }, { transporter = smtpTransporter() } = {}) {
+        try {
+            const info = await transporter.sendMail({ from: process.env.EMAIL_FROM, to, subject, text });
+            if (info && Array.isArray(info.rejected) && info.rejected.length > 0) throw new EmailDeliveryError("RECIPIENT_REJECTED", { permanent: true });
+            return { status: "SENT" };
+        } catch (error) {
+            // Never log the message or the server's full reply (it can echo addresses or content).
+            throw error instanceof EmailDeliveryError ? error : classifySmtpError(error);
+        }
+    },
+};
+
+const productionProviders = ["smtp"];
 
 function getEmailProvider() {
     const name = (process.env.EMAIL_PROVIDER || "none").trim();
@@ -90,4 +151,4 @@ async function deliver(message, { timeoutMs = 8000 } = {}) {
     }
 }
 
-module.exports = { getEmailProvider, deliver, providers, productionProviders, EmailDeliveryError, outboxDir };
+module.exports = { getEmailProvider, deliver, providers, productionProviders, EmailDeliveryError, outboxDir, classifySmtpError };

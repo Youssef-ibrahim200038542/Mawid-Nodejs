@@ -1,6 +1,6 @@
 # Migration review — rollout plan for the production `mawid` database
 
-Prepared 2026-11-25. **Nothing in this document has been executed against `mawid`.** Rolling out is a separate step that needs explicit approval.
+Prepared 2026-11-25, updated 2026-11-27 (account security). **Nothing in this document has been executed against `mawid`.** Rolling out is a separate step that needs explicit approval.
 
 ## 1. Inventory
 
@@ -11,12 +11,15 @@ Prepared 2026-11-25. **Nothing in this document has been executed against `mawid
 | 3 | `20261125140000_clinic_operations` | **pending** | applied | **no**: 7 new tables + their FKs/CHECKs | none |
 | 4 | `20261125160000_appointments` | **pending** | applied | **no**: 2 new tables + their FKs/CHECKs | none |
 | 5 | `20261125180000_notifications` | **pending** | applied | **no**: 1 new table + its FKs | none |
+| 6 | `20261126120000_account_security` | **pending** | applied 2026-11-27 (row counts of all existing tables identical before/after) | **adds columns**: `users` (+`email_verified_at` NULL, +`session_version` DEFAULT 0), `clinic_members` (+4 trust columns, default `LEGACY_UNREVIEWED`); 3 new tables (`auth_tokens`, `clinic_invitations`, `auth_rate_buckets`) + FKs/CHECKs | none |
 
 Checked automatically across all five files:
 - 0 occurrences of DROP, TRUNCATE, DELETE or UPDATE.
 - Checksums recorded in `mawid_test._prisma_migrations` equal the SHA-256 of the committed files (`3eb6bc…`, `33dcff…`, `7d6ca6…`, `5e7281…`, `969431…`).
 - After applying all five, `migrate diff` (live `mawid_test` → `schema.prisma`) is empty, so the migrations fully describe the schema.
 - `mawid_test` was created empty and migrated 1 → 5 in order, so a clean replay of the whole chain is proven.
+
+Migration 6 (H1, see `07-account-security.md`): `ADD COLUMN` only, with defaults that keep every existing row valid (no backfill needed). Every existing membership becomes `LEGACY_UNREVIEWED` — by design, it must be re-confirmed (§4a). The CHECK constraints avoid columns that carry a CASCADE / SET NULL foreign-key action. Read-only status on `mawid` (2026-11-27): migrations 3–6 pending; `mawid` has 1 user, 0 clinics, 0 memberships.
 
 ## 2. What the pending migrations do to `mawid`
 
@@ -39,6 +42,8 @@ New tables only: `specialties`, `services`, `doctor_profiles`, `doctor_specialti
 
 ## 4. Rollout procedure (to be run only after approval)
 
+**Gates — all must be met first:** a real email provider configured and tested (verification / reset / invitations depend on it); the least-privilege database accounts created and `scripts/verify-db-privileges.js` passing for the app account (H2); the existing memberships reviewed (§4a); this plan approved; a verified backup + restore drill (`docs/operations/deployment.md`). Use the `mawid_migrator` account for step 4, never the app account.
+
 1. **Back up `mawid`** with the same read-only JSON export used in Stage 2 (into `backups/`, gitignored), or `mysqldump --single-transaction mawid` with the XAMPP client tools. Record row counts and `CHECKSUM TABLE` for every table.
 2. **Recommended rehearsal:** restore that backup into a throwaway `mawid_rehearsal` database, apply the pending migrations there, run the integration suite against it, then drop it. This needs approval because it creates and drops a database on the shared server; it never touches `car_rental`.
 3. Check the status (read-only): `npx prisma migrate status`. Expected: the three pending migrations listed in §1.
@@ -53,12 +58,20 @@ New tables only: `specialties`, `services`, `doctor_profiles`, `doctor_specialti
    - The app starts, and the EJS pages and `/api/v1/auth/me` work.
 6. Grant the first super admin if wanted: `node scripts/make-super-admin.js <email>`.
 
+### 4a. Legacy membership review (mandatory)
+
+1. Before migrating: `node scripts/review-memberships.js --env <env> --db mawid` (read-only: `START TRANSACTION READ ONLY`, ROLLBACK). On 2026-11-27 `mawid` has 0 memberships.
+2. After migrating, every existing membership is `LEGACY_UNREVIEWED` and its workspace is closed.
+3. A verified Super Admin requests the owner re-confirmation for each clinic without a trusted owner (`POST /admin/clinics/:id/owner-reconfirmations`); the owner accepts from their own verified inbox.
+4. Owners re-confirm the legitimate members (Team page → "Request re-confirmation") and disable unknown ones.
+5. Re-run the report; the owner approves the result.
+
 ### Backing out
 
-The pending migrations only add empty tables, so backing out means dropping those 10 new tables in reverse dependency order and deleting their 3 rows from `_prisma_migrations`, or restoring the step-1 backup. Both are destructive operations on `mawid` and need explicit approval at that time. They are not scripted here on purpose.
+Migrations 3–5 only add empty tables, so backing out means dropping those 10 new tables in reverse dependency order and deleting their 3 rows from `_prisma_migrations`, or restoring the step-1 backup. Both are destructive operations on `mawid` and need explicit approval at that time. They are not scripted here on purpose. Migration 6 adds nullable/defaulted columns that the previous code ignores, so the application can be rolled back without touching the schema; removing the columns and the 3 new tables is a separate, destructive step needing approval.
 
 ## 5. Not yet migration-related, but needed before production
 
-- A shared rate-limit store (rate limits are in-memory, single process).
-- An email provider, if email notifications are wanted.
+- A shared rate-limit store (in-memory limiters are per process; the per-email buckets and cooldowns are already in the database).
+- An SMTP provider (required: account security depends on email).
 - Global strict mode for MariaDB, postponed. Mawid doesn't depend on it because it uses session-level strict mode.

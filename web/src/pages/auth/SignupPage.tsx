@@ -1,19 +1,20 @@
 import { useState } from "react";
-import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
+import { Link, Navigate, useSearchParams } from "react-router";
+import { EnvelopeSimple } from "@phosphor-icons/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useI18n } from "@/i18n";
 import { useAuth } from "@/auth/AuthProvider";
 import { safeNext } from "@/auth/guards";
-import { Button, ErrorSummary, Field, TextInput } from "@/components/ui/primitives";
+import { Button, ButtonLink, ErrorSummary, Field, TextInput } from "@/components/ui/primitives";
 import { AuthCard, PasswordInput } from "./LoginPage";
 
 export default function SignupPage() {
     const { t, errorMessage } = useI18n();
     const { me, signup } = useAuth();
-    const navigate = useNavigate();
     const [params] = useSearchParams();
+    const [sent, setSent] = useState(false);
     const next = safeNext(params.get("next"), "/");
     const [serverError, setServerError] = useState<unknown>(null);
 
@@ -34,12 +35,29 @@ export default function SignupPage() {
     const onSubmit = form.handleSubmit(async (values) => {
         setServerError(null);
         try {
+            // Never logs in: the same answer comes back whether or not the address has an account.
             await signup(values.name, values.email, values.password);
-            navigate(next, { replace: true });
+            setSent(true);
         } catch (error) {
             setServerError(error);
         }
     });
+
+    const loginLink = `/login${params.get("next") ? `?next=${encodeURIComponent(next)}` : ""}`;
+    if (sent) {
+        return (
+            <AuthCard title={t("account.checkEmailTitle")} footer={t("account.checkEmailHint")}>
+                <div role="status" className="flex flex-col gap-5">
+                    <p className="flex items-start gap-3 text-lg">
+                        <EnvelopeSimple aria-hidden size={26} className="mt-0.5 shrink-0 text-malachite-deep" /> {t("account.checkEmailBody")}
+                    </p>
+                    <ButtonLink to={loginLink} variant="primary">
+                        {t("account.continueToLogin")}
+                    </ButtonLink>
+                </div>
+            </AuthCard>
+        );
+    }
 
     return (
         <AuthCard

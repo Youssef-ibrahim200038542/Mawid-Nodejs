@@ -34,7 +34,7 @@ export default function ResetPasswordPage() {
             await authApi.resetPassword(token, password);
             // Every session (this one too) was invalidated on the server.
             setCsrfToken(null);
-            queryClient.clear();
+            queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "auth" });
             queryClient.setQueryData(meQueryKey, null);
             setDone(true);
         } catch (error) {

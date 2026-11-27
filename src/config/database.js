@@ -26,7 +26,11 @@ const adapter = new PrismaMariaDb({
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD ?? '',
     database: process.env.DB_NAME,
-    connectionLimit: 5,
+    // Pool size per process (DB_CONNECTION_LIMIT, default 5). Keep it below the account's
+    // MAX_USER_CONNECTIONS / the server's max_connections divided by the number of app processes.
+    connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 5),
+    // How long a request waits for a pooled connection before failing (ms).
+    acquireTimeout: Number(process.env.DB_ACQUIRE_TIMEOUT_MS || 10000),
     // Session-scoped only: applies to Mawid's own connections and never changes the
     // server's global settings, so other databases on the same server are unaffected.
     sessionVariables: {

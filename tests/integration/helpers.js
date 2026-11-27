@@ -1,5 +1,7 @@
 // Must be the first require in every integration test file.
 const { TEST_DATABASE } = require("./env");
+// Account emails are kept in memory so tests can follow the emailed links (test-only provider).
+process.env.EMAIL_PROVIDER = "memory";
 const bcrypt = require("bcrypt");
 const prisma = require("../../src/config/database");
 
@@ -12,10 +14,15 @@ async function assertConnectedToTestDatabase() {
     return db;
 }
 
-// Empties Mawid's tables inside mawid_test only, children before parents. No TRUNCATE/DROP.
+// Empties Mawid's tables inside the pinned test database only, children before parents.
+// No TRUNCATE/DROP. clinic_members ↔ clinic_invitations reference each other (RESTRICT), so the
+// trust link is cleared first (back to LEGACY_UNREVIEWED, which the CHECK constraint allows).
 async function resetTestData() {
     await assertConnectedToTestDatabase();
     await prisma.$transaction([
+        prisma.clinicMember.updateMany({ data: { trustState: "LEGACY_UNREVIEWED", trustSource: null, trustedAt: null, trustedViaInvitationId: null } }),
+        prisma.authToken.deleteMany(),
+        prisma.authRateBucket.deleteMany(),
         prisma.auditLog.deleteMany(),
         prisma.registration.deleteMany(),
         prisma.event.deleteMany(),
@@ -28,6 +35,7 @@ async function resetTestData() {
         prisma.doctorProfile.deleteMany(),
         prisma.service.deleteMany(),
         prisma.specialty.deleteMany(),
+        prisma.clinicInvitation.deleteMany(),
         prisma.clinicMember.deleteMany(),
         prisma.clinic.deleteMany(),
         prisma.session.deleteMany(),
@@ -48,21 +56,42 @@ async function createUser(overrides = {}) {
             name: `Test User ${userCounter}`,
             email: `user-${process.pid}-${userCounter}@example.test`,
             passwordHash: testPasswordHash,
+            // Fixtures are verified accounts unless a test says otherwise.
+            emailVerifiedAt: new Date(),
             ...overrides,
         },
     });
 }
 
-async function createClinicWithMember({ slug, userId, role = "OWNER", memberStatus = "ACTIVE", clinicStatus = "ACTIVE" }) {
+// Test fixture shortcut: memberships are created TRUSTED (as if their owner had created the
+// clinic) unless { trusted: false } asks for a pre-H1 LEGACY_UNREVIEWED membership.
+const trustedFixture = () => ({ trustState: "TRUSTED", trustSource: "CLINIC_CREATOR", trustedAt: new Date() });
+
+async function createClinicWithMember({ slug, userId, role = "OWNER", memberStatus = "ACTIVE", clinicStatus = "ACTIVE", trusted = true }) {
     await assertConnectedToTestDatabase();
     const clinic = await prisma.clinic.create({ data: { slug, name: `Clinic ${slug}`, status: clinicStatus } });
-    await prisma.clinicMember.create({ data: { clinicId: clinic.id, userId, role, status: memberStatus } });
+    await prisma.clinicMember.create({ data: { clinicId: clinic.id, userId, role, status: memberStatus, ...(trusted ? trustedFixture() : {}) } });
     return clinic;
 }
 
-async function addMember(clinicId, userId, role, status = "ACTIVE") {
+async function addMember(clinicId, userId, role, status = "ACTIVE", { trusted = true } = {}) {
     await assertConnectedToTestDatabase();
-    return prisma.clinicMember.create({ data: { clinicId, userId, role, status } });
+    return prisma.clinicMember.create({ data: { clinicId, userId, role, status, ...(trusted ? trustedFixture() : {}) } });
+}
+
+// The most recent email sent to an address, and the token from its link (#token=…).
+const sentEmails = () => require("../../src/modules/notifications/email-provider").providers.memory.sent;
+async function waitForEmail(to, { since = 0, purpose = null, timeoutMs = 3000 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        const found = sentEmails().filter((m) => m.to === to && m.at.getTime() >= since && (!purpose || m.purpose === purpose)).at(-1);
+        if (found) {
+            const match = /#token=([A-Za-z0-9_-]+)/.exec(found.text);
+            return { ...found, token: match ? match[1] : null };
+        }
+        if (Date.now() > deadline) throw new Error(`No email to ${to}${purpose ? ` (${purpose})` : ""}`);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+    }
 }
 
 // Starts the real Express app on an ephemeral port.
@@ -143,6 +172,8 @@ module.exports = {
     createUser,
     createClinicWithMember,
     addMember,
+    waitForEmail,
+    sentEmails,
     startServer,
     stopServer,
     createClient,

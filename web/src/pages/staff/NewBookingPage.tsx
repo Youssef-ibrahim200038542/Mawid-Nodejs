@@ -53,7 +53,8 @@ export default function NewBookingPage() {
     const services = useQuery({ queryKey: ["staff", slug, "services", "active"], queryFn: () => servicesApi.list(slug) });
     const doctors = useQuery({
         queryKey: ["staff", slug, "doctors", "for-service", serviceId],
-        queryFn: () => doctorsApi.list(slug, { serviceId, pageSize: 100 }),
+        // Only bookable doctors (the booking engine refuses the rest anyway).
+        queryFn: () => doctorsApi.list(slug, { serviceId, pageSize: 100 }).then((page) => ({ ...page, items: page.items.filter((d) => d.bookable) })),
         enabled: Boolean(serviceId),
     });
     const patients = useQuery({

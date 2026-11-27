@@ -1,8 +1,11 @@
 const { assertProductionConfig } = require("./config/startup-checks");
+const { assertRuntimeCredentials, verifyRuntimeGrants } = require("./config/db-privileges");
 const { productionProviders } = require("./modules/notifications/email-provider");
 
-// Fail fast, before anything listens: production needs a real email provider and an https web URL.
+// Fail fast, before anything listens: production needs a real email provider, an https web URL,
+// and a dedicated non-root database account without the migration credentials.
 assertProductionConfig(process.env, { knownProviders: productionProviders });
+assertRuntimeCredentials(process.env);
 
 const app = require("./app");
 const prisma = require("./config/database");
@@ -19,6 +22,16 @@ async function start() {
         logger.info("Connected to MySQL");
     } catch (err) {
         logger.fatal({ err }, "Could not connect to MySQL");
+        process.exit(1);
+    }
+
+    // Least privilege: in production any grant beyond SELECT/INSERT/UPDATE/DELETE on the Mawid
+    // database (or any global privilege) stops the process. Elsewhere it is a warning.
+    try {
+        const problems = await verifyRuntimeGrants(prisma);
+        if (problems.length) logger.warn({ problems }, "Database account is broader than the production least-privilege account");
+    } catch (err) {
+        logger.fatal({ err: { message: err.message } }, "Database privilege check failed");
         process.exit(1);
     }
 

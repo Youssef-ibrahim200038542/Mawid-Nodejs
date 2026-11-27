@@ -18,28 +18,27 @@ test.after(async () => {
     }
 });
 
-test("signup creates the user, hashes the password and starts a session", async () => {
+test("legacy signup creates an unverified user and does NOT start a session", async () => {
     const client = createClient(baseUrl);
     const res = await client.post("/signup", { form: { name: "Sara", email: "Sara@Example.test", password: "a-strong-password" } });
-    assert.equal(res.status, 302);
-    assert.equal(res.headers.get("location"), "/dashboard");
+    assert.equal(res.status, 202);
 
     const user = await prisma.user.findUnique({ where: { email: "sara@example.test" } });
     assert.ok(user);
     assert.match(user.passwordHash, /^\$2b\$12\$/);
     assert.equal(user.platformRole, "USER");
     assert.equal(user.locale, "en");
-
-    const me = await client.get("/api/v1/auth/me");
-    assert.equal(me.status, 200);
-    assert.equal(me.data.user.email, "sara@example.test");
-    assert.equal(JSON.stringify(me.data).includes("passwordHash"), false);
+    assert.equal(user.emailVerifiedAt, null);
+    assert.equal((await client.get("/api/v1/auth/me")).status, 401, "no automatic login");
 });
 
-test("duplicate signup is rejected with 409", async () => {
-    await createUser({ email: "taken@example.test" });
+test("legacy signup with a taken address answers exactly like a new one and changes nothing", async () => {
+    const existing = await createUser({ email: "taken@example.test" });
     const res = await createClient(baseUrl).post("/signup", { form: { name: "Dup", email: "taken@example.test", password: "a-strong-password" } });
-    assert.equal(res.status, 409);
+    assert.equal(res.status, 202);
+    const after = await prisma.user.findUnique({ where: { id: existing.id } });
+    assert.equal(after.passwordHash, existing.passwordHash);
+    assert.equal(after.name, existing.name);
 });
 
 test("login with wrong password or unknown email returns 401 and no session", async () => {

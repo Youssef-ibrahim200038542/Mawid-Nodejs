@@ -72,6 +72,7 @@ export default function DoctorsPage() {
                                         <span className="text-sm text-graphite">{d.services.map((s) => pick(s.nameEn, s.nameAr)).join(" · ") || "—"}</span>
                                     </span>
                                     <span className={d.isActive ? "text-sm text-malachite-deep" : "text-sm text-graphite"}>{d.isActive ? t("common.active") : t("common.inactive")}</span>
+                                    {d.memberTrustState !== "TRUSTED" && <span className="rounded-control bg-saffron-tint px-2 py-0.5 text-xs font-medium ring-1 ring-saffron/50">{t("doctors.notBookable")}</span>}
                                 </Link>
                             </li>
                         ))}

@@ -22,7 +22,10 @@ const store = new PrismaSessionStore(prisma, {
     enableConcurrentSetInvocationsForSameSessionID: true,
 });
 
+const { cookieName, production } = require("./config/session-cookie");
+
 const sessionMiddleware = session({
+    name: cookieName,
     secret: sessionSecret,
     store,
     resave: false,
@@ -30,12 +33,14 @@ const sessionMiddleware = session({
     cookie: {
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure: production,
+        path: "/",
         maxAge: 7 * 24 * 60 * 60 * 1000,
     },
 });
 
 // Exposed so tests and shutdown code can stop the expiry timer.
 sessionMiddleware.store = store;
+sessionMiddleware.cookieName = cookieName;
 
 module.exports = sessionMiddleware;

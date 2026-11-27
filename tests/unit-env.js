@@ -14,5 +14,6 @@ Object.assign(process.env, {
     DB_NAME: "mawid_unit",
     DATABASE_URL: "mysql://unit@127.0.0.1:1/mawid_unit",
     EMAIL_PROVIDER: "none",
+    DB_ACQUIRE_TIMEOUT_MS: "300",
     SESSION_SECRET: crypto.randomBytes(32).toString("base64url"),
 });

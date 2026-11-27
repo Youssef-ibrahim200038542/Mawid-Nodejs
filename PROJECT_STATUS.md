@@ -1,10 +1,22 @@
 # Mawid — Project Status
 
-**Stable reference:** commit `398b1ab` (branch `main`) · **Status date:** 2026-11-26
+**Status date:** 2026-11-27 · Production readiness: **not ready** — see §0.
 
 Mawid (موعد) is a multi-tenant clinic management and appointment booking platform. Each clinic is an isolated tenant with its own doctors, services, schedules, patients and appointments. Patients find a clinic and book a real open time online. Clinic staff run their day from one shared schedule.
 
 ---
+
+## 0. Security remediation status (2026-11-27)
+
+| Finding | Status |
+|---|---|
+| **H1** account takeover via unverified email + add-by-email | **Fixed in code.** Email verification, invitations accepted by the verified invitee, password reset, session versions, legacy-membership re-confirmation, doctor bookability. See `docs/architecture/07-account-security.md`. Unit-tested and browser-verified with new accounts on `mawid_test`; integration tests written, not run. |
+| **H2** root DB account on a server shared with another project | **Prepared, not applied.** Least-privilege accounts script, startup refusal of root / broad grants / migration credentials in production, read-only verifier. The accounts themselves must be created by a DBA (server-level change); locally the app still connects as root, and the verifier reports FAIL. |
+| **H3** no production deployment path | **Prepared.** Express serves the built SPA (`SERVE_WEB=1`), explicit CSP, HTTPS enforcement, `__Host-` cookie, health/readiness endpoints, SMTP provider, deployment / backup / monitoring / smoke-test docs (`docs/operations/deployment.md`). Not deployed; SMTP untested without credentials. |
+| M2 legacy login CSRF | Closed in production mode (legacy auth forms are not mounted with `SERVE_WEB=1`). |
+| M1 email enumeration via member add | Closed (invitations answer the same either way). |
+| M3 / L3 in-memory rate limits | Still per process; per-email limits and cooldowns are now in the database. |
+| L5 vulnerable unused deps | `express-mysql-session` / `mysql2` removed. Remaining audit finding: `effect` inside the Prisma CLI (build-time tool). |
 
 ## 1. Architecture
 
@@ -88,8 +100,8 @@ Permissions are enforced by the API on every request. The web app only mirrors t
 
 | Suite | Command | Result |
 |---|---|---|
-| Unit tests | `npm test` | **66 / 66 passing** |
-| Integration tests (real database `mawid_test`) | `npm run test:integration` | **77 / 77 passing** (last run before the frontend stage; the API has not changed since) |
+| Unit tests (no database reachable — `tests/unit-env.js`) | `npm test` | **101 / 101 passing** (2026-11-27) |
+| Integration tests | `npm run test:integration` | **Not run since H1** (they empty their database). Updated + new account-security suite written. Last run before H1: 77 / 77. Run only with approval, preferably `MAWID_IT=1` on a dedicated `mawid_test_it`. |
 | Web app typecheck + production build | `npm run web:build` | **passing** |
 
 The integration tests cover:
@@ -136,13 +148,14 @@ The local MariaDB server is **shared with another project**. Its database and th
 
 | Database | Role | State |
 |---|---|---|
-| `mawid` | production / development data | Frozen at migration `20261125120000_clinic_tenancy`. **The three pending migrations have NOT been applied.** Contents verified unchanged by row counts and table checksums. |
-| `mawid_test` | **current testing database** | All 5 migrations applied; used by the integration tests and the local dev stack (`npm run dev:test-db`, `npm run web:dev`). |
+| `mawid` | production / development data | Frozen at migration `20261125120000_clinic_tenancy`. **4 pending migrations NOT applied.** |
+| `mawid_test` | **current testing database** | All 6 migrations applied (account security on 2026-11-27; row counts of all existing tables identical before/after). |
 
-Pending migrations (additive only: new tables, no drops or changes to existing tables):
+Pending on `mawid` (additive only):
 1. `20261125140000_clinic_operations`
 2. `20261125160000_appointments`
 3. `20261125180000_notifications`
+4. `20261126120000_account_security` (adds columns with safe defaults + 3 tables; existing memberships become `LEGACY_UNREVIEWED` and must be re-confirmed)
 
 Safeguards:
 - A database guard refuses any database not named `mawid` / `mawid_*`.
@@ -156,8 +169,8 @@ The ordered rollout plan, risks and back-out procedure are in `docs/architecture
 
 - No automated browser (E2E) test suite yet; browser flows were verified manually.
 - Rate limits are in memory (single process); a shared store is needed before running multiple instances.
-- No email provider configured (in-app notifications work; email is recorded as skipped).
-- Staff are added by existing account email; there are no email invitations.
+- SMTP is implemented but untested against a real provider (no credentials yet).
+- Clinics whose owner cannot reach their inbox can't be recovered in-app (no email-change flow).
 - Booking rules (15-minute slot grid, 60-minute online notice, 90-day horizon, 2-hour change window, 5 upcoming bookings per patient) are global constants, not per-clinic settings.
 - The calendar loads up to 100 appointments per visible range; analytics covers past periods only.
 - Deleting specialties, services or doctors is not exposed; they are deactivated to keep history.
@@ -165,12 +178,12 @@ The ordered rollout plan, risks and back-out procedure are in `docs/architecture
 
 ## 8. Pending tasks
 
-1. Review and approve the production rollout of the three pending migrations (`docs/architecture/05-migration-review.md`), optionally rehearsed on a temporary copy first.
-2. Add an automated E2E suite for the critical flows (booking, confirmation, role scopes).
-3. Configure an email provider and schedule the reminder job (`scripts/send-reminders.js`, hourly).
-4. Add a shared rate-limit store before multi-instance deployment.
-5. Decide how the legacy events pages and the new web app are served together in production.
-6. Enable MariaDB global strict mode later, once it is safe for the other project on the same server.
+1. Create the least-privilege DB accounts (`deploy/database/create-accounts.sql`) and pass `scripts/verify-db-privileges.js` (H2).
+2. SMTP credentials + a real test email (H3).
+3. Run the integration suites with approval (dedicated `mawid_test_it`).
+4. Production hosting (separate MariaDB, TLS proxy, `SERVE_WEB=1`), backups with a successful restore drill.
+5. Approve and run the `mawid` rollout incl. the legacy-membership review (`05-migration-review.md` §4–4a).
+6. Shared rate-limit store before more than one app process; automated E2E suite; reminder job schedule.
 
 ## 9. Running locally
 
@@ -179,8 +192,10 @@ npm install && npm --prefix web install
 npm test                    # unit tests
 npm run test:integration    # integration tests (empties mawid_test)
 npm run dev:test-db         # API on :3100 against mawid_test
-npm run web:dev             # web app on :5173
+npm run web:dev             # web app on :5173 (emails go to var/mail-outbox/)
 ```
+
+Production: `npm run build:prod` then `npm run start:prod` — see `docs/operations/deployment.md`.
 
 Configuration is read from `.env` (production / dev) and `.env.test` (tests). Both are local only and never committed; see `.env.example` and `.env.test.example`.
 
@@ -192,4 +207,6 @@ Configuration is read from `.env` (production / dev) and `.env.test` (tests). Bo
 - `docs/architecture/04-platform-backend.md`: auth API, notifications, analytics, Super Admin
 - `docs/architecture/05-migration-review.md`: production migration rollout plan
 - `docs/architecture/06-frontend.md`: web app pages, API mapping, browser test log
+- `docs/architecture/07-account-security.md`: account security, invitations, membership trust (H1)
+- `docs/operations/deployment.md`: production deployment, DB accounts, email, backups, smoke test (H2/H3)
 - `docs/design/01-design-direction.md`: visual design direction

@@ -98,3 +98,32 @@ Bugs found and fixed during browser testing: a query-cache key collision (crashe
 - Analytics covers past periods only (no forecast of upcoming bookings).
 - Members are added by existing account email. There are no email invitations, and no email provider is configured.
 - Not yet run on the production `mawid` database (rollout held).
+
+## Account security (H1) — added 2026-11-27
+
+| Route | Purpose | API |
+|---|---|---|
+| `/signup` | Generic "check your email" state; never logs in | `POST /auth/signup` (202) |
+| `/verify-email#token=` | Confirms the email (token read from the fragment, then removed from the URL) | `POST /auth/verify-email` |
+| `/forgot-password`, `/reset-password#token=` | Reset with a generic answer; after reset every session is signed out | `POST /auth/password/forgot`, `/reset` |
+| `/invitations/accept#token=` | Preview → log in / sign up → confirm email → Accept / Decline (mismatch and unverified states) | `POST /invitations/preview`, `/accept`, `/decline` |
+| Banner (all public pages) | "Confirm your email" + resend with the real delivery result | `POST /auth/verify-email/resend` |
+| `/workspace`, staff layout | Legacy (not re-confirmed) memberships show "Awaiting re-confirmation" and don't open | `/auth/me` `trustState` |
+| `/c/:slug/team` | Invite, pending invitations (delivery state, resend, withdraw), trust badges, "Request re-confirmation" | `/clinics/:slug/invitations*`, `/members/:id/reconfirmations` |
+| `/admin/clinics` | "Confirmed owners" column + owner re-confirmation bootstrap | `/admin/clinics/:id/owners`, `/owner-reconfirmations` |
+
+Any 401 from an authenticated call (expired or revoked session) clears the local identity and the guards
+send the user to log in. Fixed while testing: logout (and the reset page) kept showing the signed-out
+user in the header because `queryClient.clear()` detached the mounted "me" query; the cache is now
+pruned instead.
+
+Browser-verified on `mawid_test` with new accounts only (Arabic and English): signup → check-email,
+verification from the local outbox (fragment removed, token absent from server logs), verified owner
+opens a clinic (trusted), invite an unregistered address (delivery shown), resend cooldown, guest
+invitation preview, unverified invitee blocked (UI + API 403), verify → accept → receptionist workspace,
+reuse rejected (409), other clinic 404, receptionist cannot list invitations (403), old member-add
+endpoint 410, forgot-password identical answers, reset → session revoked (401 SESSION_REVOKED), old
+password rejected, new password works, logout. Production build served by Express (`SERVE_WEB=1`): home,
+calendar, analytics and the legacy dashboard render with no CSP violations.
+Not browser-verified: re-confirmation of legacy memberships and the admin bootstrap (they would change
+the existing manual test data; covered by integration tests that were written but not run).

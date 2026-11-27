@@ -92,6 +92,9 @@ export default function LoginPage() {
                 <Button type="submit" variant="primary" loading={isSubmitting}>
                     {isSubmitting ? t("auth.loggingIn") : t("auth.loginButton")}
                 </Button>
+                <Link to="/forgot-password" className="text-sm font-medium text-malachite-deep hover:underline">
+                    {t("account.forgotLink")}
+                </Link>
             </form>
         </AuthCard>
     );

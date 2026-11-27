@@ -11,7 +11,7 @@
 //   - regeneration fails       → 500.
 const prisma = require("../config/database");
 
-const sessionCookieName = "connect.sid";
+const { cookieName: sessionCookieName } = require("../config/session-cookie");
 
 function regenerate(req) {
     return new Promise((resolve, reject) => req.session.regenerate((error) => (error ? reject(error) : resolve())));

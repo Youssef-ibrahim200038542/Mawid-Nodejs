@@ -1,4 +1,4 @@
-const { prisma, resetTestData, createUser, addMember, startServer, stopServer, createClient, assertConnectedToTestDatabase } = require("./helpers");
+const { prisma, resetTestData, createUser, addMember, startServer, stopServer, createClient, assertConnectedToTestDatabase, waitForEmail } = require("./helpers");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { DateTime } = require("luxon");
@@ -59,14 +59,20 @@ test("SPA auth: signup, profile update, logout, login — all CSRF-protected", a
 
     const anonymousToken = await client.refreshCsrf();
     const signup = await client.post("/api/v1/auth/signup", { json: { name: "Spa User", email: "SPA@example.test", password: "spa-password-1", locale: "ar" } });
-    assert.equal(signup.status, 201);
-    assert.equal(signup.data.user.email, "spa@example.test");
-    assert.equal(signup.data.user.locale, "ar");
-    assert.notEqual(signup.data.csrfToken, anonymousToken, "a new session gets a new token");
-    assert.equal(JSON.stringify(signup.data).includes("passwordHash"), false);
+    assert.equal(signup.status, 202);
+    assert.deepEqual(Object.keys(signup.data).sort(), ["message", "status"], "no user, no token, no session");
+    assert.equal((await client.get("/api/v1/auth/me")).status, 401, "signup never logs in");
+    const created = await prisma.user.findUnique({ where: { email: "spa@example.test" } });
+    assert.equal(created.locale, "ar");
+    assert.equal(created.emailVerifiedAt, null);
 
+    const first = await client.post("/api/v1/auth/login", { json: { email: "spa@example.test", password: "spa-password-1" } });
+    assert.equal(first.status, 200, "unverified accounts may log in (patients can still book)");
+    assert.equal(first.data.user.emailVerified, false);
+    assert.notEqual(first.data.csrfToken, anonymousToken, "a new session gets a new token");
+    assert.equal(JSON.stringify(first.data).includes("passwordHash"), false);
     assert.equal((await client.patch("/api/v1/auth/me", { json: { locale: "en" } })).status, 403, "old token is dead");
-    client.setCsrf(signup.data.csrfToken);
+    client.setCsrf(first.data.csrfToken);
     assert.equal((await client.patch("/api/v1/auth/me", { json: { locale: "en", name: "Spa Renamed" } })).data.user.name, "Spa Renamed");
     assert.equal((await client.patch("/api/v1/auth/me", { json: { platformRole: "SUPER_ADMIN" } })).status, 400, "can't self-promote");
 
@@ -88,20 +94,32 @@ test("SPA auth: signup, profile update, logout, login — all CSRF-protected", a
     assert.equal((await createClient(baseUrl).post("/api/v1/auth/signup", { json: {} })).status, 403);
     const anon = createClient(baseUrl);
     await anon.refreshCsrf();
-    assert.equal((await anon.post("/api/v1/auth/signup", { json: { name: "Dup", email: "spa@example.test", password: "spa-password-1" } })).data.error.code, "EMAIL_TAKEN");
+    const dup = await anon.post("/api/v1/auth/signup", { json: { name: "Dup", email: "spa@example.test", password: "spa-password-1" } });
+    assert.equal(dup.status, 202, "same answer for a taken address");
+    assert.deepEqual(dup.data, signup.data);
 });
 
 // ---------------------------------------------------------------- staff membership
 
-test("owners add existing users as staff; guards stop lock-outs and invalid roles", async () => {
+test("owners invite staff, who join only by accepting; guards stop lock-outs and invalid roles", async () => {
     const owner = clients.owner;
-    const added = await owner.post(`${P}/members`, { json: { email: users.newStaff.email.toUpperCase(), role: "RECEPTIONIST" } });
-    assert.equal(added.status, 201);
-    members.newStaff = { id: added.data.member.id };
-    assert.equal((await owner.post(`${P}/members`, { json: { email: users.newStaff.email, role: "DOCTOR" } })).data.error.code, "MEMBER_EXISTS");
-    assert.equal((await owner.post(`${P}/members`, { json: { email: "nobody-here@example.test", role: "DOCTOR" } })).data.error.code, "USER_NOT_FOUND");
-    assert.equal((await clients.receptionist.post(`${P}/members`, { json: { email: users.stranger.email, role: "OWNER" } })).status, 403);
-    assert.equal((await clients.ownerQ.post(`${P}/members`, { json: { email: users.stranger.email, role: "OWNER" } })).status, 404);
+    assert.equal((await owner.post(`${P}/members`, { json: { email: users.newStaff.email, role: "RECEPTIONIST" } })).status, 410, "direct add by email is gone");
+    const since = Date.now();
+    const invited = await owner.post(`${P}/invitations`, { json: { email: users.newStaff.email.toUpperCase(), role: "RECEPTIONIST" } });
+    assert.equal(invited.status, 201);
+    assert.equal(await prisma.clinicMember.count({ where: { clinicId: clinic.id, userId: users.newStaff.id } }), 0, "no membership before acceptance");
+    const { token } = await waitForEmail(users.newStaff.email, { since });
+    const accepted = await clients.newStaff.post("/api/v1/invitations/accept", { json: { token } });
+    assert.equal(accepted.status, 200);
+    const joined = await prisma.clinicMember.findFirst({ where: { clinicId: clinic.id, userId: users.newStaff.id } });
+    assert.equal(joined.trustState, "TRUSTED");
+    assert.equal(joined.trustSource, "INVITATION");
+    members.newStaff = { id: joined.id };
+    assert.equal((await owner.post(`${P}/invitations`, { json: { email: users.newStaff.email, role: "DOCTOR" } })).data.error.code, "MEMBER_EXISTS");
+    const unknown = await owner.post(`${P}/invitations`, { json: { email: "nobody-here@example.test", role: "DOCTOR" } });
+    assert.equal(unknown.status, 201, "same answer whether or not the address has an account");
+    assert.equal((await clients.receptionist.post(`${P}/invitations`, { json: { email: users.stranger.email, role: "OWNER" } })).status, 403);
+    assert.equal((await clients.ownerQ.post(`${P}/invitations`, { json: { email: users.stranger.email, role: "OWNER" } })).status, 404);
 
     assert.equal((await owner.patch(`${P}/members/${members.owner.id}`, { json: { role: "RECEPTIONIST" } })).data.error.code, "CANNOT_CHANGE_SELF");
     assert.equal((await owner.patch(`${P}/members/${members.doctor.id}`, { json: { role: "RECEPTIONIST" } })).data.error.code, "MEMBER_HAS_DOCTOR_PROFILE");

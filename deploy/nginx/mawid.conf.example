@@ -1,0 +1,30 @@
+# Example reverse proxy for Mawid (one origin: SPA + API + legacy pages from the Node process).
+# TLS certificates: e.g. Let's Encrypt. Replace mawid.example with the real domain.
+
+server {
+    listen 80;
+    server_name mawid.example;
+    # Health checks may stay on HTTP inside the private network; everything else goes to HTTPS.
+    location = /healthz { proxy_pass http://127.0.0.1:3000; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name mawid.example;
+
+    ssl_certificate     /etc/letsencrypt/live/mawid.example/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mawid.example/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 128k;   # the app itself limits JSON to 100 kB and forms to 20 kB
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;   # the app trusts exactly one proxy (TRUST_PROXY=1)
+        proxy_read_timeout 30s;
+    }
+}

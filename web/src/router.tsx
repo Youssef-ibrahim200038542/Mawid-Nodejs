@@ -12,6 +12,10 @@ const DiscoveryPage = lazy(() => import("@/pages/public/DiscoveryPage"));
 const ClinicPage = lazy(() => import("@/pages/public/ClinicPage"));
 const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
 const SignupPage = lazy(() => import("@/pages/auth/SignupPage"));
+const VerifyEmailPage = lazy(() => import("@/pages/auth/VerifyEmailPage"));
+const ForgotPasswordPage = lazy(() => import("@/pages/auth/ForgotPasswordPage"));
+const ResetPasswordPage = lazy(() => import("@/pages/auth/ResetPasswordPage"));
+const AcceptInvitationPage = lazy(() => import("@/pages/invitations/AcceptInvitationPage"));
 const MyAppointmentsPage = lazy(() => import("@/pages/portal/MyAppointmentsPage"));
 const NotificationsPage = lazy(() => import("@/pages/portal/NotificationsPage"));
 const ProfilePage = lazy(() => import("@/pages/portal/ProfilePage"));
@@ -63,6 +67,10 @@ export const router = createBrowserRouter([
             { path: "clinics/:slug", element: page(<ClinicPage />) },
             { path: "login", element: page(<LoginPage />) },
             { path: "signup", element: page(<SignupPage />) },
+            { path: "verify-email", element: page(<VerifyEmailPage />) },
+            { path: "forgot-password", element: page(<ForgotPasswordPage />) },
+            { path: "reset-password", element: page(<ResetPasswordPage />) },
+            { path: "invitations/accept", element: page(<AcceptInvitationPage />) },
             { path: "me/appointments", element: <RequireAuth>{page(<MyAppointmentsPage />)}</RequireAuth> },
             { path: "notifications", element: <RequireAuth>{page(<NotificationsPage />)}</RequireAuth> },
             { path: "profile", element: <RequireAuth>{page(<ProfilePage />)}</RequireAuth> },

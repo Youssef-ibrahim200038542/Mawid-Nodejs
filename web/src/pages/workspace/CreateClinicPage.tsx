@@ -9,6 +9,7 @@ import { clinicsApi } from "@/api/endpoints";
 import { ApiError } from "@/api/client";
 import { Button, ErrorSummary, Field, PageHeader, Section, Select, TextInput } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
+import { ResendVerification } from "@/components/shell/VerifyEmailBanner";
 
 export const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const timezones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : ["Africa/Cairo"];
@@ -24,7 +25,7 @@ export function slugify(value: string) {
 
 export default function CreateClinicPage() {
     const { t, errorMessage } = useI18n();
-    const { refresh } = useAuth();
+    const { refresh, me } = useAuth();
     const { notify } = useToast();
     const navigate = useNavigate();
 
@@ -57,6 +58,19 @@ export default function CreateClinicPage() {
             if (error instanceof ApiError && error.code === "CLINIC_SLUG_TAKEN") form.setError("slug", { message: t("errors.CLINIC_SLUG_TAKEN") });
         },
     });
+
+    // The API refuses unverified creators (403 EMAIL_NOT_VERIFIED); explain it before the form.
+    if (me && !me.user.emailVerified) {
+        return (
+            <div className="mx-auto max-w-2xl px-4 py-10 md:px-6">
+                <PageHeader title={t("workspace.createTitle")} />
+                <Section>
+                    <p className="mb-4 font-medium">{t("workspace.verifyToCreate")}</p>
+                    <ResendVerification />
+                </Section>
+            </div>
+        );
+    }
 
     return (
         <div className="mx-auto max-w-2xl px-4 py-10 md:px-6">

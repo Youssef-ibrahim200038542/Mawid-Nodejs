@@ -80,7 +80,7 @@ router.post("/auth/login", loginLimiter, validate(loginSchema), async (req, res)
 router.post("/auth/logout", (req, res, next) => {
     req.session.destroy((error) => {
         if (error) return next(error);
-        res.clearCookie("connect.sid");
+        res.clearCookie(require("../../config/session-cookie").cookieName, { path: "/" });
         res.status(204).end();
     });
 });

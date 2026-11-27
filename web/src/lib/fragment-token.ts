@@ -6,10 +6,14 @@ import { useState } from "react";
 // localStorage / sessionStorage. `remember` keeps an invitation token across the in-app login
 // detour (same tab, no reload).
 const remembered = new Map<string, string>();
+// The token read from the fragment on this path. Reading must be idempotent: React (StrictMode in
+// development) may run a state initializer twice, and the first run already cleaned the URL.
+let lastRead: { path: string; token: string } | null = null;
 
 function readFragmentToken(): string | null {
     const match = /(?:^#|&)token=([A-Za-z0-9_-]{20,100})/.exec(window.location.hash);
-    if (!match) return null;
+    if (!match) return lastRead && lastRead.path === window.location.pathname ? lastRead.token : null;
+    lastRead = { path: window.location.pathname, token: match[1] };
     window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
     return match[1];
 }

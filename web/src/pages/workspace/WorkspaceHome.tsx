@@ -31,7 +31,16 @@ export default function WorkspaceHome() {
                 />
             ) : (
                 <ul>
-                    {clinics.map((clinic) => (
+                    {clinics.map((clinic) =>
+                        clinic.trustState !== "TRUSTED" ? (
+                            <li key={clinic.slug} className="ledger-rule py-3">
+                                <span className="block text-lg font-semibold">{clinic.name}</span>
+                                <span className="text-sm text-graphite">{t(`roles.${clinic.role}`)}</span>
+                                <p className="mt-2 rounded-control bg-saffron-tint px-3 py-2 text-sm ring-1 ring-saffron/50">
+                                    <strong className="font-semibold">{t("workspace.awaitingTitle")}.</strong> {t("workspace.awaitingBody")}
+                                </p>
+                            </li>
+                        ) : (
                         <li key={clinic.slug} className="ledger-rule">
                             <Link to={`/c/${clinic.slug}`} className="group flex min-h-16 items-center justify-between gap-4 py-3">
                                 <span>
@@ -41,7 +50,8 @@ export default function WorkspaceHome() {
                                 <ArrowRight aria-hidden size={20} className="flip-rtl text-graphite group-hover:text-ink" />
                             </Link>
                         </li>
-                    ))}
+                        )
+                    )}
                 </ul>
             )}
         </div>

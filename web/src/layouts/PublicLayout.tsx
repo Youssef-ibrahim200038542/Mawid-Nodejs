@@ -5,6 +5,7 @@ import { useI18n } from "@/i18n";
 import { useAuth } from "@/auth/AuthProvider";
 import { buttonClass } from "@/components/ui/primitives";
 import { LocaleSwitch, NotificationBell, SkipLink, UserMenu, Wordmark } from "@/components/shell/Shell";
+import { VerifyEmailBanner } from "@/components/shell/VerifyEmailBanner";
 import { cx } from "@/lib/cx";
 
 export function PublicLayout() {
@@ -105,6 +106,7 @@ export function PublicLayout() {
                     </nav>
                 )}
             </header>
+            <VerifyEmailBanner />
             <main id="main" tabIndex={-1} className="flex-1 outline-none">
                 <Outlet />
             </main>

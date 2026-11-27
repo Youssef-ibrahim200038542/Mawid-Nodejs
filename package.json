@@ -16,7 +16,11 @@
     "dev:test-db": "node scripts/dev-test-server.js",
     "web:dev": "node scripts/dev-web-test.js",
     "web:build": "npm --prefix web run build",
-    "web:typecheck": "npm --prefix web run typecheck"
+    "web:typecheck": "npm --prefix web run typecheck",
+    "start:prod": "node src/index.js",
+    "build:prod": "prisma generate && npm --prefix web ci && npm --prefix web run build",
+    "db:verify-privileges": "node scripts/verify-db-privileges.js",
+    "db:review-memberships": "node scripts/review-memberships.js"
   },
   "keywords": [],
   "type": "commonjs",
@@ -28,13 +32,12 @@
     "dotenv": "^18.0.10",
     "ejs": "^7.0.2",
     "express": "^5.3.0",
-    "express-mysql-session": "^3.0.3",
     "express-rate-limit": "^8.7.5",
     "express-session": "^1.19.0",
     "helmet": "^8.3.0",
     "luxon": "^3.7.2",
     "mariadb": "^3.5.5",
-    "mysql2": "^3.24.6",
+    "nodemailer": "^10.6.1",
     "pino": "^10.4.0",
     "pino-http": "^11.0.0",
     "zod": "^4.6.7"

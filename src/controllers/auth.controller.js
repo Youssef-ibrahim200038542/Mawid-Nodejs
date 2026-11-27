@@ -143,7 +143,7 @@ function logout(req, res, next) {
             return next(error);
         }
 
-        res.clearCookie("connect.sid");
+        res.clearCookie(require("../config/session-cookie").cookieName, { path: "/" });
         res.redirect("/");
     });
 }

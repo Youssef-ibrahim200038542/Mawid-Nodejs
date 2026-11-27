@@ -1,0 +1,27 @@
+# Example systemd unit for the Mawid Node process (Linux). Secrets live in /etc/mawid/mawid.env
+# (mode 0600, owned by root, readable by the service via EnvironmentFile) — never in the repository.
+[Unit]
+Description=Mawid clinic booking (API + web app)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mawid
+Group=mawid
+WorkingDirectory=/opt/mawid
+EnvironmentFile=/etc/mawid/mawid.env
+ExecStart=/usr/bin/node src/index.js
+Restart=on-failure
+RestartSec=5
+# Graceful shutdown: the app stops taking deliveries and drains in-flight email sends (~10 s).
+KillSignal=SIGTERM
+TimeoutStopSec=15
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/mawid/var
+
+[Install]
+WantedBy=multi-user.target

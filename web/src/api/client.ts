@@ -32,7 +32,9 @@ type UnauthenticatedListener = (code: string) => void;
 const unauthenticatedListeners = new Set<UnauthenticatedListener>();
 export function onUnauthenticated(listener: UnauthenticatedListener) {
     unauthenticatedListeners.add(listener);
-    return () => unauthenticatedListeners.delete(listener);
+    return () => {
+        unauthenticatedListeners.delete(listener);
+    };
 }
 // Credential checks answer 401 by design and must not log anyone out.
 const credentialPaths = new Set(["/auth/login", "/auth/me"]);
