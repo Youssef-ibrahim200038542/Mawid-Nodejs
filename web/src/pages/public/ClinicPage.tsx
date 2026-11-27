@@ -28,7 +28,7 @@ export function WeeklyHoursList({ intervals, zone }: { intervals: { weekday: num
                 return (
                     <div key={weekday} className="ledger-rule flex justify-between gap-4 py-2">
                         <dt className="text-graphite">{t(`weekdays.${weekday}`)}</dt>
-                        <dd className="tabular text-end">{day.length === 0 ? <span className="text-graphite">{t("clinicPage.closed")}</span> : day.map((i) => `${i.start}–${i.end}`).join(" · ")}</dd>
+                        <dd className="tabular text-end">{day.length === 0 ? <span className="text-graphite">{t("clinicPage.closed")}</span> : <span dir="ltr">{day.map((i) => `${i.start}–${i.end}`).join(" · ")}</span>}</dd>
                     </div>
                 );
             })}
@@ -279,7 +279,8 @@ export default function ClinicPage() {
                 {(clinic.address || clinic.city) && (
                     <p className="flex items-center gap-1.5 text-sm text-graphite">
                         <MapPin aria-hidden size={18} />
-                        {joinParts([clinic.address, clinic.city], locale)}
+                        {/* Isolated so a Latin address keeps its own word order inside the Arabic layout. */}
+                        <bdi>{joinParts([clinic.address, clinic.city], locale)}</bdi>
                     </p>
                 )}
             </header>

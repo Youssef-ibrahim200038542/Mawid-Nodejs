@@ -15,7 +15,7 @@ export function ClinicCard({ clinic }: { clinic: PublicClinicListItem }) {
             {(clinic.city || clinic.address) && (
                 <span className="flex items-center gap-1.5 text-sm text-graphite">
                     <MapPin aria-hidden size={16} />
-                    {joinParts([clinic.address, clinic.city], locale)}
+                    <bdi>{joinParts([clinic.address, clinic.city], locale)}</bdi>
                 </span>
             )}
             {clinic.specialties.length > 0 && (
