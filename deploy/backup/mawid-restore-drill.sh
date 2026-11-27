@@ -41,11 +41,25 @@ fi
 mysql -e "CREATE DATABASE \`${TARGET_DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
 zcat "$DUMP" | mysql "$TARGET_DB"
 
+# Every count must succeed: a failed query aborts the drill instead of comparing two empty lists.
 count_rows() {
-  mysql -N -e "SELECT table_name FROM information_schema.tables WHERE table_schema='$1' ORDER BY table_name" |
-    while read -r t; do echo "$t $(mysql -N -e "SELECT COUNT(*) FROM \`$1\`.\`$t\`")"; done
+  local tables t n
+  tables=$(mysql -N -e "SELECT table_name FROM information_schema.tables WHERE table_schema='$1' ORDER BY table_name")
+  [[ -n "$tables" ]] || { echo "FAILED: no tables found in $1." >&2; return 1; }
+  while read -r t; do
+    n=$(mysql -N -e "SELECT COUNT(*) FROM \`$1\`.\`$t\`") || { echo "FAILED: cannot count $1.$t" >&2; return 1; }
+    echo "$t $n"
+  done <<< "$tables"
 }
-diff <(count_rows "$SOURCE_DB") <(count_rows "$TARGET_DB") && echo "Row counts match (source may have changed since the dump; differences on live data are expected)." || echo "Row counts differ — review (expected if the source changed after the dump)."
+source_counts=$(count_rows "$SOURCE_DB")
+target_counts=$(count_rows "$TARGET_DB")
+echo "Tables restored: $(wc -l <<< "$target_counts") (source: $(wc -l <<< "$source_counts"))"
+if [[ "$source_counts" == "$target_counts" ]]; then
+  echo "Row counts match (source may have changed since the dump; differences on live data are expected)."
+else
+  echo "Row counts differ — review (expected if the source changed after the dump):"
+  diff <(echo "$source_counts") <(echo "$target_counts") || true
+fi
 mysql "$TARGET_DB" -N -e "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY started_at" | tail -3
 
 mysql -e "DROP DATABASE \`${TARGET_DB}\`"

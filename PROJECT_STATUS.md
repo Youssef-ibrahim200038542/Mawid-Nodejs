@@ -10,13 +10,25 @@ Mawid (موعد) is a multi-tenant clinic management and appointment booking pla
 
 | Finding | Status |
 |---|---|
-| **H1** account takeover via unverified email + add-by-email | **Fixed and verified.** Email verification, invitations accepted by the verified invitee, password reset, session versions, legacy-membership re-confirmation, Super Admin bootstrap, doctor bookability. See `docs/architecture/07-account-security.md`. Unit 103/103, integration 90/90 (twice, on `mawid_test_it`), browser-verified with new accounts on `mawid_test`. |
+| **H1** account takeover via unverified email + add-by-email | **Fixed and verified.** Email verification, invitations accepted by the verified invitee, password reset, session versions, legacy-membership re-confirmation, Super Admin bootstrap, doctor bookability. See `docs/architecture/07-account-security.md`. Unit 108/108, integration 91/91 (on `mawid_test_it`), production-build smoke test passed, browser-verified with new accounts on `mawid_test`. |
 | **H2** root DB account on a server shared with another project | **Prepared, not applied.** `mawid_app` (data only) / `mawid_migrator` (CREATE, ALTER, INDEX, REFERENCES — no DROP; proven sufficient by a test over all migrations) script; production refuses root, broad grants and migration credentials in the app; read-only verifier with `--role app|migrator`. Accounts must be created by a DBA (server-level change). Locally the app still connects as root (verifier: FAIL). |
 | **H3** no production deployment path | **Prepared.** Express serves the built SPA (`SERVE_WEB=1`), explicit CSP, HTTPS enforcement, `__Host-` cookie, health/readiness endpoints, SMTP provider, deployment / backup / monitoring / smoke-test docs (`docs/operations/deployment.md`). Not deployed; SMTP untested without credentials. |
 | M2 legacy login CSRF | Closed in production mode (legacy auth forms are not mounted with `SERVE_WEB=1`). |
 | M1 email enumeration via member add | Closed (invitations answer the same either way). |
 | M3 / L3 in-memory rate limits | Still per process; per-email limits and cooldowns are now in the database. |
 | L5 vulnerable deps | `express-mysql-session` / `mysql2` removed; `effect` (Prisma CLI) pinned to the fixed 3.22.5 via `overrides`. `npm audit --omit=dev`: **0**. Dev-only: 2 moderate (`minimatch` via `nodemon`). |
+
+### Production operations log (2026-11-27, local MariaDB 10.4 server — the only server available; no production host exists yet)
+
+| Operation | Result |
+|---|---|
+| DB accounts (`create-accounts.sql`, DB `mawid`, host `localhost`) | **Blocked.** `CREATE USER mawid_app` succeeded; its `GRANT` failed with **`Index for table 'db' is corrupt`**: the server's own `mysql.db` system table (Aria, 3 rows) is damaged. Stopped there: repairing a system table of the server shared with DriveX needs the owner's approval. `mawid_app` exists with no privileges (USAGE only); `mawid_migrator` not created. Credentials only in the git-ignored `.env.mawid-app`. Verifiers not run (nothing to verify yet). |
+| Backup of `mawid` (`mawid-backup.sh`) | **OK.** `mawid-20261127T113803Z.sql.gz` (+ `.sha256`) stored outside the repository; checksum OK, gzip OK, 8 tables, no `CREATE DATABASE`/`USE`. |
+| Restore drill (`mawid-restore-drill.sh`) | **Passed** into `mawid_restore_drill2`: checksum OK, 8/8 tables, all row counts equal, migration history restored, database dropped. A leftover first attempt (`mawid_restore_check`) was compared with `mawid` (`CHECKSUM TABLE` equal for all 8 tables; identical columns, indexes and foreign keys), then dropped. The first attempt exposed a script bug (failed count queries were reported as "match"); fixed: the drill now aborts if any count fails. |
+| Protected databases | `car_rental` never accessed; `mawid`, `mawid_test`, `mawid_test_it` unchanged (tables, migrations, counts re-checked). |
+| SMTP | Not tested: no credentials yet. |
+| Hosting / HTTPS | Not started: no server or domain yet. |
+| `mawid` migrations (4 pending) | Not applied: prerequisite (verified `mawid_migrator`) not met. |
 
 ## 1. Architecture
 

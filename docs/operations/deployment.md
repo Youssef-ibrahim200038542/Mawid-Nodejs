@@ -185,7 +185,10 @@ Configure SPF, DKIM and DMARC for the sender domain. **Not yet tested** — no c
   database. `.sha256` files name only the dump file, so dumps can be copied elsewhere and still be
   verified. These refusals are covered by `tests/backup-scripts.test.js` (runs the real scripts; no
   database is contacted). Run monthly and before the first migration, on a non-production server.
-  **A backup only counts once a drill of it succeeded — no drill has been run yet.**
+  **A backup only counts once a drill of it succeeded.** First drill: 2026-11-27 on the local server, passed.
+  The drill aborts if any row count cannot be read; it never reports a match it could not check.
+  Windows/XAMPP: run from Git Bash with `mariadb` / `mariadb-dump` wrappers around `mysql.exe` /
+  `mysqldump.exe` that strip the CR from their output (`… | tr -d '\r'`).
 
   Drill command **[DBA — needs approval]** and expected output:
   ```bash
