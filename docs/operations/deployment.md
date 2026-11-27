@@ -49,16 +49,32 @@ and the checker (`src/config/db-privileges.js`) agree.
 
 Enforced by the app in production (fails closed, before listening):
 - `DB_USER` not root/admin, `DB_PASSWORD` ≥ 16 chars, **no `DATABASE_URL` in the app process**.
-- `SHOW GRANTS FOR CURRENT_USER()` must show only the four data privileges on `DB_NAME` (any global
-  privilege, other database, DDL, PROXY, role or GRANT OPTION → exit).
+- `SHOW GRANTS FOR CURRENT_USER()` must show **exactly** the four data privileges at database level on
+  `DB_NAME`: any global privilege, other or wildcard database, DDL, PROXY, role, unknown grant form or
+  GRANT OPTION → exit; a **missing** required privilege → exit too. Error texts name privileges and
+  databases only, never credentials.
 
 Verification **[read-only]**:
 ```powershell
 node scripts/verify-db-privileges.js --env <app env file> --db mawid
 node scripts/verify-db-privileges.js --env <migration env file> --db mawid --role migrator
 ```
-PASS = only the allowed privileges and no other database visible. Against the current local root
-account it correctly reports FAIL.
+PASS = exactly the expected privileges and no other database visible. Against the current local root
+account it correctly reports FAIL. The checker is covered by a valid/invalid matrix in
+`tests/production-config.test.js` (root, global, other/wildcard database, GRANT OPTION, PROXY, roles,
+excess, DROP/CREATE DATABASE, missing and table-only privileges).
+
+#### DBA procedure **[DBA — needs owner approval]**
+1. Preflight (read-only): `SELECT user, host FROM mysql.user WHERE user LIKE 'mawid\_%';` — expect none.
+2. Copy `deploy/database/create-accounts.sql`, replace `{{DB}}`, `{{APP_HOST}}`, `{{APP_PASSWORD}}`,
+   `{{MIG_PASSWORD}}` (32+ random characters each; store them only in the secret store), run it once as
+   an administrator: `mariadb -u <admin> -p < create-accounts.filled.sql`, then delete the filled copy.
+3. `SHOW GRANTS FOR 'mawid_app'@'<host>'; SHOW GRANTS FOR 'mawid_migrator'@'<host>';`
+4. Run both verifier commands above → both PASS.
+5. Negative checks as `mawid_app` (must fail with "command denied"): `CREATE TABLE x (id INT);`,
+   `DROP TABLE users;` (denied before anything happens), `USE car_rental;`.
+   As `mawid_migrator`: `CREATE DATABASE x;` and `DROP TABLE users;` must be denied.
+Rollback: `DROP USER 'mawid_app'@'<host>'; DROP USER 'mawid_migrator'@'<host>';`
 
 ## 3. Environments
 
@@ -67,12 +83,13 @@ account it correctly reports FAIL.
 | Local development | `.env` | `mawid` (frozen) — **don't** point dev at it | local |
 | Browser testing | `.env.test` via `npm run dev:test-db` (API :3100) + `npm run web:dev` | `mawid_test` (manual test data — never reset) | local |
 | Integration tests | `.env.test-it` (generated) via `npm run test:integration` | `mawid_test_it` (disposable, emptied every run) | local |
-| Production runtime | `/etc/mawid/mawid.env` | `mawid` | `mawid_app` |
+| Production runtime | `/etc/mawid/mawid.env` (template: `.env.production.example`) | `mawid` | `mawid_app` |
 | Production migrations | separate job env with `DATABASE_URL` | `mawid` | `mawid_migrator` |
 
 ### Fixing the current local `.env` mismatch **[local]**
 `.env` currently has `DB_NAME=mawid_test` but its `DATABASE_URL` names `mawid`; the db-guard refuses
-to start. Choose one, then make both lines agree:
+to start, and the Prisma CLI refuses too (`prisma7.config.js` compares `DB_NAME` with `DATABASE_URL`).
+Nothing can silently act on a different database. Choose one, then make both lines agree:
 - keep `.env` on the frozen `mawid` (recommended; use `npm run dev:test-db` for testing): set
   `DB_NAME=mawid`; or
 - point `.env` at `mawid_test`: change the database at the end of `DATABASE_URL` to `mawid_test` —
@@ -92,8 +109,11 @@ to start. Choose one, then make both lines agree:
 | `EMAIL_PROVIDER=smtp`, `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_SECURE` (`true` for 465), `SMTP_USER`, `SMTP_PASSWORD` | email (TLS ≥ 1.2 required, certificate verified) |
 | `LOG_LEVEL` | `info` |
 
-The app refuses to start with: a development email provider, a non-https `WEB_APP_URL`, missing
-`EMAIL_FROM` / `SMTP_HOST`, root/weak DB credentials, `DATABASE_URL` present, or broader DB grants.
+The app refuses to start with: a development email provider, a non-https `WEB_APP_URL` or `APP_URL`,
+missing `EMAIL_FROM` / `SMTP_HOST`, root/weak DB credentials, `DATABASE_URL` present, or DB grants that
+are broader or narrower than `mawid_app`'s. Precedence: process environment only (systemd
+`EnvironmentFile`); `dotenv` never overrides a variable that is already set, and there are no built-in
+development fallbacks for any production-required value.
 
 ## 5. Security hardening in place (H3, verified by `tests/production-config.test.js` in production mode)
 - Helmet: explicit CSP (all `'self'`, inline *styles* only, no inline scripts, `frame-ancestors 'none'`,
@@ -105,6 +125,8 @@ The app refuses to start with: a development email provider, a non-https `WEB_AP
 - Body limits 100 kB JSON / 20 kB forms; errors never include stack traces; Pino redacts cookies,
   auth/CSRF headers and passwords; tokens never appear in URLs.
 - `/healthz` (no DB, no session) and `/readyz` (DB `SELECT 1`, 2 s limit, 503) return only a status word.
+- Node server timeouts: keep-alive 65 s (longer than nginx's upstream keep-alive → no stale-socket 502s),
+  headers 66 s, whole request 30 s.
 
 ## 6. Build, start, stop (Linux) **[owner]**
 ```bash
@@ -133,7 +155,10 @@ node scripts/setup-integration-db.js            # [read-only] check
 node scripts/setup-integration-db.js --create   # [local] CREATE DATABASE mawid_test_it + .env.test-it
 npm run test:integration                        # migrates mawid_test_it, runs tests/integration/*.test.js
 ```
-Status 2026-11-27: `mawid_test_it` created; all 6 migrations replayed cleanly on the empty database; **90 / 90 passing** in two consecutive runs.
+Status 2026-11-27: `mawid_test_it` created; all 6 migrations replayed cleanly on the empty database
+(recorded checksums equal the committed files); **91 / 91 passing**. Four layers keep it there:
+`MAWID_IT=1` → `.env.test-it`; `MAWID_EXPECT_DB`; `SELECT DATABASE()` before migrating; the reset
+refuses any other database.
 
 ## 9. Email (H3.4) **[creds]**
 `EMAIL_PROVIDER=smtp` (nodemailer 10). STARTTLS required unless `SMTP_SECURE=true`; TLS ≥ 1.2,
@@ -152,11 +177,27 @@ Configure SPF, DKIM and DMARC for the sender domain. **Not yet tested** — no c
   gzip + `gzip -t` + sha256, refuses non-Mawid names, refuses when free disk < 1 GB, logs success/failure
   to syslog (`mawid-backup`), keeps `RETENTION_DAYS` (14). Copy dumps off the host (versioned object
   storage); keep monthly copies 12 months. Credentials: 0600 option file (never on the command line).
-- `deploy/backup/mawid-restore-drill.sh` **[destructive on its own target only]**: restores into a new
-  `mawid_restore_<suffix>` database (refuses any other name, an existing database, a dump with
-  `CREATE DATABASE`/`USE`, or a checksum mismatch), compares row counts, shows the last migrations, then
-  drops only that database. Run monthly and before the first migration, on a non-production server.
-  A backup only counts once a drill of it succeeded.
+- `deploy/backup/mawid-restore-drill.sh` **[creates and drops its own database — needs approval]**:
+  restores into a new `mawid_restore_<suffix>` database and refuses: any other name (`mawid`,
+  `mawid_test`, `mawid_test_it`, `car_rental`…), an existing database, target = source, a checksum
+  mismatch, or a dump containing `CREATE DATABASE` / `CREATE SCHEMA` / `USE` (also inside `/*!…*/`
+  version comments). Then it compares row counts, shows the last applied migrations and drops only that
+  database. `.sha256` files name only the dump file, so dumps can be copied elsewhere and still be
+  verified. These refusals are covered by `tests/backup-scripts.test.js` (runs the real scripts; no
+  database is contacted). Run monthly and before the first migration, on a non-production server.
+  **A backup only counts once a drill of it succeeded — no drill has been run yet.**
+
+  Drill command **[DBA — needs approval]** and expected output:
+  ```bash
+  DUMP=/var/backups/mawid/mawid-<stamp>.sql.gz TARGET_DB=mawid_restore_check SOURCE_DB=mawid \
+  MYSQL_DEFAULTS=/etc/mawid/restore.cnf ./deploy/backup/mawid-restore-drill.sh
+  # mawid-<stamp>.sql.gz: OK
+  # Row counts match (…)            ← or "differ" if the source changed after the dump
+  # 20261126120000_account_security ← last applied migrations
+  # Restore drill finished; mawid_restore_check dropped.
+  ```
+- Encryption: store dumps on encrypted volumes / encrypted object storage (server-side encryption) with
+  access limited to the operators; dumps contain personal data (patients, users, password hashes).
 
 ## 11. Monitoring
 - Uptime: `https://<domain>/healthz` every minute, `/readyz` every 5 minutes; alert on 2 failures.
@@ -167,6 +208,18 @@ Configure SPF, DKIM and DMARC for the sender domain. **Not yet tested** — no c
 - Database: `auth_tokens` rows in `FAILED`/`RETRYABLE` (email outage), connection errors in logs.
 - Backups: alert when `mawid-backup` logs FAILED or no new dump for 26 h; disk usage of `BACKUP_DIR`.
 - Error tracking (e.g. Sentry) is not wired in; optional later.
+
+## 11a. Incident response (short)
+- **App down:** `systemctl status mawid`, `journalctl -u mawid -n 200`; `/readyz` 503 → database
+  reachability / credentials; restart only after reading the fatal log line (startup refusals name the
+  failed rule).
+- **Suspected account compromise:** password reset on the account (signs out every session); a clinic
+  owner can disable members; the Super Admin can suspend a clinic. Review `audit_logs`.
+- **Email outage:** account emails retry automatically (max 3 real attempts); owners resend invitations.
+  Check `auth_tokens` in `FAILED` / `RETRYABLE` and provider status.
+- **Data loss / bad migration:** stop the app, restore the newest verified dump into a new database,
+  compare, then switch only with the owner's approval. Never `migrate reset`.
+- **Secrets leaked:** rotate `SESSION_SECRET` (signs everyone out), DB and SMTP passwords; redeploy.
 
 ## 12. Production smoke test (after every deployment)
 1. `/healthz` 200, `/readyz` 200, `http://` → 308 https.

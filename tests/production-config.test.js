@@ -14,15 +14,43 @@ const emailProvider = require("../src/modules/notifications/email-provider");
 
 // ------------------------------------------------------------------ H2: least privilege
 
-test("grant parser accepts exactly data privileges on the app's own database", () => {
-    const ok = ["GRANT USAGE ON *.* TO `mawid_app`@`localhost` IDENTIFIED BY PASSWORD '*X'", "GRANT SELECT, INSERT, UPDATE, DELETE ON `mawid`.* TO `mawid_app`@`localhost`"];
-    assert.deepEqual(grantProblems(ok, "mawid"), []);
-    assert.deepEqual(grantProblems(["GRANT ALL PRIVILEGES ON *.* TO `root`@`localhost` WITH GRANT OPTION"], "mawid"), ["global privileges: ALL PRIVILEGES"]);
-    assert.deepEqual(grantProblems(["GRANT SELECT ON `car_rental`.* TO `mawid_app`@`localhost`"], "mawid"), ["privileges on another database: car_rental"]);
-    assert.deepEqual(grantProblems(["GRANT SELECT, DROP, CREATE ON `mawid`.* TO `mawid_app`@`localhost`"], "mawid"), ["more than the allowed privileges on mawid: DROP, CREATE"]);
-    assert.deepEqual(grantProblems(["GRANT SELECT ON `mawid`.* TO `mawid_app`@`localhost` WITH GRANT OPTION"], "mawid"), ["GRANT OPTION on mawid"]);
-    assert.deepEqual(grantProblems(["GRANT PROXY ON ''@'%' TO 'root'@'localhost' WITH GRANT OPTION"], "mawid"), ["PROXY grant"]);
-    assert.deepEqual(grantProblems(["GRANT SELECT ON `mawid`.`users` TO `mawid_app`@`localhost`"], "mawid"), []);
+test("privilege checker: valid and invalid grant combinations (app and migrator)", () => {
+    const { MIGRATOR_PRIVILEGES } = require("../src/config/db-privileges");
+    const usage = "GRANT USAGE ON *.* TO `mawid_app`@`localhost` IDENTIFIED BY PASSWORD '*X'";
+    const app = "GRANT SELECT, INSERT, UPDATE, DELETE ON `mawid`.* TO `mawid_app`@`localhost`";
+    const migrator = "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON `mawid`.* TO `mawid_migrator`@`localhost`";
+    const check = (lines, allowed) => grantProblems(lines, "mawid", allowed);
+
+    // Valid: exactly the expected set, at database level.
+    assert.deepEqual(check([usage, app]), []);
+    assert.deepEqual(check([usage, migrator], MIGRATOR_PRIVILEGES), []);
+
+    // Root / global privileges / GRANT OPTION / PROXY.
+    assert.ok(check(["GRANT ALL PRIVILEGES ON *.* TO `root`@`localhost` WITH GRANT OPTION"]).includes("global privileges: ALL PRIVILEGES"));
+    assert.ok(check([usage, app, "GRANT SELECT ON *.* TO `mawid_app`@`localhost`"]).includes("global privileges: SELECT"));
+    assert.ok(check([usage, app.replace(" TO", " WITH GRANT OPTION TO").replace(/ WITH GRANT OPTION TO (.*)$/, " TO $1 WITH GRANT OPTION")]).includes("GRANT OPTION on mawid"));
+    assert.ok(check([usage, app, "GRANT PROXY ON ''@'%' TO 'mawid_app'@'localhost'"]).includes("PROXY grant"));
+
+    // Unrelated databases, wildcard patterns, wrong scope.
+    assert.ok(check([usage, app, "GRANT SELECT ON `car_rental`.* TO `mawid_app`@`localhost`"]).includes("privileges on another database: car_rental"));
+    assert.ok(check([usage, "GRANT SELECT, INSERT, UPDATE, DELETE ON `mawid\_%`.* TO `mawid_app`@`localhost`"]).some((p) => p.startsWith("privileges on another database")));
+    assert.ok(check([usage, "GRANT SELECT, INSERT, UPDATE, DELETE ON `mawid_test`.* TO `mawid_app`@`localhost`"]).some((p) => p.startsWith("missing required privileges")), "grants on the wrong database leave the right one uncovered");
+
+    // Excessive privileges: DDL for the app, DROP / CREATE DATABASE-level rights for the migrator.
+    assert.ok(check([usage, "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP ON `mawid`.* TO `mawid_app`@`localhost`"]).includes("more than the allowed privileges on mawid: CREATE, DROP"));
+    assert.ok(check([usage, migrator.replace("REFERENCES", "REFERENCES, DROP")], MIGRATOR_PRIVILEGES).includes("more than the allowed privileges on mawid: DROP"));
+    assert.ok(check([usage, "GRANT ALL PRIVILEGES ON `mawid`.* TO `mawid_app`@`localhost`"]).includes("more than the allowed privileges on mawid: ALL PRIVILEGES"));
+    assert.ok(check(["GRANT CREATE ON *.* TO `mawid_migrator`@`localhost`", migrator], MIGRATOR_PRIVILEGES).includes("global privileges: CREATE"), "no CREATE DATABASE right");
+
+    // Missing required privileges, table-level only grants, roles and unknown forms fail closed.
+    assert.deepEqual(check([usage, "GRANT SELECT, INSERT ON `mawid`.* TO `mawid_app`@`localhost`"]), ["missing required privileges on mawid: UPDATE, DELETE"]);
+    assert.deepEqual(check([usage, app], MIGRATOR_PRIVILEGES), ["missing required privileges on mawid: CREATE, ALTER, INDEX, REFERENCES"]);
+    assert.ok(check([usage, "GRANT SELECT ON `mawid`.`users` TO `mawid_app`@`localhost`"]).some((p) => p.startsWith("missing required privileges")));
+    assert.ok(check([usage, app, "GRANT `dba_role` TO `mawid_app`@`localhost`"]).some((p) => p.startsWith("unrecognised grant")));
+    assert.deepEqual(check([]), ["missing required privileges on mawid: SELECT, INSERT, UPDATE, DELETE"]);
+
+    // Problem texts never carry the password hash.
+    assert.ok(check(["GRANT `r` TO `u`@`h` IDENTIFIED BY PASSWORD '*SECRETHASH'"]).every((p) => !p.includes("SECRETHASH")));
 });
 
 test("deploy/database/create-accounts.sql grants exactly what the checker allows, on the Mawid database only", () => {
@@ -39,7 +67,7 @@ test("deploy/database/create-accounts.sql grants exactly what the checker allows
     assert.doesNotMatch(sql.replace(/^--.*$/gm, ""), /\*\.\*|WITH GRANT OPTION|ALL PRIVILEGES|car_rental/i);
     // The checker accepts these exact grants.
     assert.deepEqual(grantProblems(["GRANT USAGE ON *.* TO `mawid_migrator`@`localhost`", "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON `mawid`.* TO `mawid_migrator`@`localhost`"], "mawid", MIGRATOR_PRIVILEGES), []);
-    assert.deepEqual(grantProblems(["GRANT SELECT, DROP ON `mawid`.* TO `mawid_migrator`@`localhost`"], "mawid", MIGRATOR_PRIVILEGES), ["more than the allowed privileges on mawid: DROP"]);
+    assert.ok(grantProblems(["GRANT SELECT, DROP ON `mawid`.* TO `mawid_migrator`@`localhost`"], "mawid", MIGRATOR_PRIVILEGES).includes("more than the allowed privileges on mawid: DROP"));
 });
 
 test("every committed migration only uses statements the migrator account is allowed to run", () => {
@@ -56,6 +84,20 @@ test("every committed migration only uses statements the migrator account is all
     }
 });
 
+test(".env.production.example is a placeholder-only template that satisfies the production checks once filled", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const dotenv = require("dotenv");
+    const text = fs.readFileSync(path.join(__dirname, "..", ".env.production.example"), "utf8");
+    const env = dotenv.parse(text);
+    assert.equal(env.DATABASE_URL, undefined, "no migration credentials in the app template");
+    for (const key of ["SESSION_SECRET", "DB_PASSWORD", "SMTP_PASSWORD", "SMTP_USER", "DB_HOST"]) assert.match(env[key], /^<[^>]+>$/, `${key} is a placeholder`);
+    assert.equal(env.DB_USER, "mawid_app");
+    const filled = { ...env, DB_PASSWORD: "x".repeat(24), WEB_APP_URL: "https://mawid.example", EMAIL_FROM: "Mawid <no-reply@mawid.example>", SMTP_HOST: "smtp.example", SMTP_PASSWORD: "p" };
+    assert.doesNotThrow(() => assertRuntimeCredentials(filled));
+    assert.doesNotThrow(() => assertProductionConfig(filled, { knownProviders: emailProvider.productionProviders }));
+});
+
 test("production refuses root, weak passwords and migration credentials in the app process", () => {
     const good = { NODE_ENV: "production", DB_USER: "mawid_app", DB_PASSWORD: "x".repeat(24) };
     assert.doesNotThrow(() => assertRuntimeCredentials(good));
@@ -69,11 +111,13 @@ test("production refuses root, weak passwords and migration credentials in the a
 // ------------------------------------------------------------------ H3: email
 
 test("production email config: smtp needs host and sender; development providers are refused", () => {
-    const base = { NODE_ENV: "production", EMAIL_PROVIDER: "smtp", WEB_APP_URL: "https://mawid.example", EMAIL_FROM: "Mawid <no-reply@mawid.example>", SMTP_HOST: "smtp.example" };
+    const base = { NODE_ENV: "production", EMAIL_PROVIDER: "smtp", WEB_APP_URL: "https://mawid.example", APP_URL: "https://mawid.example", EMAIL_FROM: "Mawid <no-reply@mawid.example>", SMTP_HOST: "smtp.example" };
     assert.doesNotThrow(() => assertProductionConfig(base, { knownProviders: emailProvider.productionProviders }));
     assert.throws(() => assertProductionConfig({ ...base, SMTP_HOST: "" }, { knownProviders: ["smtp"] }), /SMTP_HOST/);
     assert.throws(() => assertProductionConfig({ ...base, WEB_APP_URL: "http://mawid.example" }, { knownProviders: ["smtp"] }), /https/);
     assert.throws(() => assertProductionConfig({ ...base, EMAIL_FROM: "" }, { knownProviders: ["smtp"] }), /EMAIL_FROM/);
+    assert.throws(() => assertProductionConfig({ ...base, APP_URL: "" }, { knownProviders: ["smtp"] }), /APP_URL/);
+    assert.throws(() => assertProductionConfig({ ...base, APP_URL: "http://mawid.example" }, { knownProviders: ["smtp"] }), /APP_URL/);
     assert.throws(() => assertProductionConfig({ ...base, SMTP_USER: "u" }, { knownProviders: ["smtp"] }), /SMTP_PASSWORD/);
     for (const dev of ["none", "log", "outbox", "memory"]) {
         assert.throws(() => assertProductionConfig({ ...base, EMAIL_PROVIDER: dev }, { knownProviders: ["smtp"] }), /cannot be used in production/);

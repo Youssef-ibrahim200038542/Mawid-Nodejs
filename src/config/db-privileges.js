@@ -29,9 +29,13 @@ function assertRuntimeCredentials(env = process.env) {
     }
 }
 
-// Parses SHOW GRANTS output. Returns the list of problems (empty = least privilege).
+// Parses SHOW GRANTS output. Returns the list of problems (empty = exactly the expected privileges).
+// Fails closed: unknown grant forms (roles, pattern/wildcard databases, column grants, PROXY) are
+// problems. `allowed` is both the ceiling and the requirement: every listed privilege must be granted
+// at database level on `dbName`, and nothing else anywhere.
 function grantProblems(grantLines, dbName, allowed = RUNTIME_PRIVILEGES) {
     const problems = [];
+    const grantedOnDb = new Set();
     for (const line of grantLines) {
         const match = /^GRANT\s+(.+?)\s+ON\s+(\S+)\s+TO\s/i.exec(line);
         if (!match) {
@@ -48,7 +52,7 @@ function grantProblems(grantLines, dbName, allowed = RUNTIME_PRIVILEGES) {
             if (!(privileges.length === 1 && privileges[0] === "USAGE")) problems.push(`global privileges: ${privileges.join(", ")}`);
             continue;
         }
-        const [schema] = target.split(".");
+        const [schema, object] = target.split(".");
         if (schema !== dbName) {
             problems.push(`privileges on another database: ${schema}`);
             continue;
@@ -56,7 +60,10 @@ function grantProblems(grantLines, dbName, allowed = RUNTIME_PRIVILEGES) {
         const extra = privileges.filter((p) => !allowed.has(p));
         if (extra.length) problems.push(`more than the allowed privileges on ${schema}: ${extra.join(", ")}`);
         if (/WITH GRANT OPTION/i.test(line)) problems.push(`GRANT OPTION on ${schema}`);
+        if (object === "*") for (const p of privileges) grantedOnDb.add(p);
     }
+    const missing = [...allowed].filter((p) => !grantedOnDb.has(p));
+    if (missing.length) problems.push(`missing required privileges on ${dbName}: ${missing.join(", ")}`);
     return problems;
 }
 

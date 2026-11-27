@@ -207,10 +207,23 @@ function sqlDateTime(date) {
     return date.toISOString().replace("T", " ").replace("Z", "");
 }
 
-// Rate buckets are fixed one-hour windows; keep two hours, delete in small batches.
+// Housekeeping of this module's own tables, in small batches:
+//   - rate buckets are one-hour windows: keep two hours;
+//   - auth tokens: keep 30 days after creation, and only delete rows that can no longer be used or
+//     delivered (consumed or expired, delivery closed). Invitations and audit logs are kept.
+const TOKEN_RETENTION_MS = 30 * 24 * HOUR;
 async function cleanupRateBuckets(db, now) {
     const cutoff = sqlDateTime(at(now, -2 * HOUR));
     await db.$executeRaw`DELETE FROM auth_rate_buckets WHERE window_start < ${cutoff} LIMIT 500`;
+    const tokenCutoff = sqlDateTime(at(now, -TOKEN_RETENTION_MS));
+    const nowSql = sqlDateTime(now);
+    await db.$executeRaw`
+        DELETE FROM auth_tokens
+        WHERE created_at < ${tokenCutoff}
+          AND (consumed_at IS NOT NULL OR expires_at < ${nowSql})
+          AND delivery_status NOT IN ('QUEUED', 'SENDING', 'RETRYABLE')
+        LIMIT 500
+    `;
 }
 
 let timer = null;

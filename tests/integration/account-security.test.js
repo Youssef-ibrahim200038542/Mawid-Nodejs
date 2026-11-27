@@ -368,3 +368,18 @@ test("delivery recovery resends a generation interrupted before sending, with a 
     assert.ok(old.consumedAt);
     assert.equal((await (await anonymous()).post("/api/v1/auth/verify-email", { json: { token: mail.token } })).status, 200);
 });
+
+test("housekeeping deletes only old, finished tokens and keeps anything still usable or in delivery", async () => {
+    const user = await createUser({ email: "cleanup@example.test" });
+    const old = new Date(Date.now() - 40 * 86_400_000);
+    const base = { userId: user.id, purpose: "EMAIL_VERIFY", email: user.email, createdAt: old, chainStartedAt: old };
+    const hash = () => require("../../src/lib/tokens").unusableTokenHash();
+    const usedOld = await prisma.authToken.create({ data: { ...base, tokenHash: hash(), expiresAt: new Date(old.getTime() + 86_400_000), consumedAt: old, consumedReason: "USED", deliveryStatus: "SENT" } });
+    const openOld = await prisma.authToken.create({ data: { ...base, tokenHash: hash(), expiresAt: new Date(old.getTime() + 86_400_000), deliveryStatus: "RETRYABLE", nextRetryAt: new Date(Date.now() + 3_600_000) } });
+    const recent = await prisma.authToken.create({ data: { ...base, createdAt: new Date(), chainStartedAt: new Date(), tokenHash: hash(), expiresAt: new Date(Date.now() + 86_400_000), deliveryStatus: "SENT" } });
+    await delivery.runRecoveryPass({ deliverFn: async () => ({ status: "SENT" }) });
+    const left = (await prisma.authToken.findMany({ where: { userId: user.id }, select: { id: true } })).map((r) => r.id);
+    assert.ok(!left.includes(usedOld.id), "old consumed token deleted");
+    assert.ok(left.includes(openOld.id), "token still in delivery kept");
+    assert.ok(left.includes(recent.id), "recent token kept");
+});

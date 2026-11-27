@@ -23,6 +23,10 @@ function assertProductionConfig(env = process.env, { knownProviders = [] } = {})
     if (!/^https:\/\/[^/]+/.test(url)) {
         throw new Error("WEB_APP_URL must be set to the https:// origin of the web app in production.");
     }
+    // Links in the legacy pages fall back to the client-supplied Host header without APP_URL.
+    if (!/^https:\/\/[^/]+/.test((env.APP_URL || "").trim())) {
+        throw new Error("APP_URL must be set to the https:// origin of the site in production.");
+    }
     if (!(env.EMAIL_FROM || "").trim()) {
         throw new Error("EMAIL_FROM must be set in production.");
     }

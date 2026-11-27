@@ -44,11 +44,11 @@ mariadb-dump --defaults-extra-file="$MYSQL_DEFAULTS" \
   "$MAWID_DB" | gzip -9 > "$file.partial"
 mv "$file.partial" "$file"
 gzip -t "$file"
-if zcat "$file" | grep -qiE '^(CREATE DATABASE|USE `)'; then
+if zcat "$file" | grep -qiE '^[[:space:]]*(/\*![0-9]+[[:space:]]*)?(CREATE[[:space:]]+(DATABASE|SCHEMA)|USE[[:space:]`])'; then
   log "FAILED: dump unexpectedly contains CREATE DATABASE / USE statements."
   exit 1
 fi
-sha256sum "$file" > "$file.sha256"
+(cd "$BACKUP_DIR" && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
 
 # Retention: delete only this database's own dumps older than RETENTION_DAYS.
 find "$BACKUP_DIR" -maxdepth 1 -type f -name "${MAWID_DB}-*.sql.gz*" -mtime +"$RETENTION_DAYS" -delete

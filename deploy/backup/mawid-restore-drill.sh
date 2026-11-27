@@ -25,8 +25,8 @@ if [[ "$TARGET_DB" == "$SOURCE_DB" ]]; then
   echo "Refusing: target equals source." >&2
   exit 1
 fi
-sha256sum -c "$DUMP.sha256"
-if zcat "$DUMP" | grep -qiE '^(CREATE DATABASE|USE `)'; then
+(cd "$(dirname "$DUMP")" && sha256sum -c "$(basename "$DUMP").sha256")
+if zcat "$DUMP" | grep -qiE '^[[:space:]]*(/\*![0-9]+[[:space:]]*)?(CREATE[[:space:]]+(DATABASE|SCHEMA)|USE[[:space:]`])'; then
   echo "Refusing: the dump contains CREATE DATABASE / USE and could write into another database." >&2
   exit 1
 fi

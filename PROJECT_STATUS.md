@@ -100,8 +100,9 @@ Permissions are enforced by the API on every request. The web app only mirrors t
 
 | Suite | Command | Result |
 |---|---|---|
-| Unit tests (no database reachable — `tests/unit-env.js`) | `npm test` | **103 / 103 passing** (2026-11-27) |
-| Integration tests (disposable `mawid_test_it` only) | `npm run test:integration` | **90 / 90 passing** (2026-11-27, two consecutive runs; fresh database migrated 0 → 6 cleanly). `mawid_test` and `mawid` verified unchanged afterwards. |
+| Unit tests (no database reachable — `tests/unit-env.js`) | `npm test` | **108 / 108 passing** (2026-11-27; includes the privilege-checker matrix and the backup/restore script safety tests) |
+| Integration tests (disposable `mawid_test_it` only) | `npm run test:integration` | **91 / 91 passing** (2026-11-27; fresh database migrated 0 → 6 cleanly, checksums match). `mawid_test` and `mawid` verified unchanged afterwards. |
+| Production build smoke test (Express `SERVE_WEB=1` on `mawid_test_it`) | browser | **passed**: verify → clinic → service/doctor/hours → patient books (UI) → overlapping slots removed → owner confirms (UI) → patient cancels (UI) → cross-tenant probes all 404 → Super Admin suspend (public 404) / reactivate (UI) → 375 px no overflow; no CSP or JS errors. |
 | Web app typecheck + production build | `npm run web:build` | **passing** |
 
 The integration tests cover:

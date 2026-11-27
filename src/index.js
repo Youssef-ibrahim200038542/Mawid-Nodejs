@@ -39,6 +39,13 @@ async function start() {
         logger.info({ port }, "Mawid is running");
     });
 
+    // Behind nginx with upstream keep-alive: Node must keep idle connections open longer than the
+    // proxy (avoids sporadic 502s on reused sockets); headersTimeout must exceed keepAliveTimeout.
+    // A whole request gets 30 s (slow clients are also cut off by nginx's client timeouts).
+    server.keepAliveTimeout = 65_000;
+    server.headersTimeout = 66_000;
+    server.requestTimeout = 30_000;
+
     server.on("error", (err) => {
         logger.fatal({ err }, "HTTP server failed");
         process.exit(1);
