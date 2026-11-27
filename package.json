@@ -12,7 +12,7 @@
     "test": "node --test --require ./tests/unit-env.js \"tests/*.test.js\"",
     "race": "node scripts/race.js",
     "test:db:migrate": "node scripts/test-db.js",
-    "test:integration": "node scripts/test-db.js && node --test --test-concurrency=1 --test-timeout=30000 --require ./tests/integration/env.js \"tests/integration/*.test.js\"",
+    "test:integration": "node scripts/run-integration.js",
     "dev:test-db": "node scripts/dev-test-server.js",
     "web:dev": "node scripts/dev-web-test.js",
     "web:build": "npm --prefix web run build",
@@ -20,7 +20,8 @@
     "start:prod": "node src/index.js",
     "build:prod": "prisma generate && npm --prefix web ci && npm --prefix web run build",
     "db:verify-privileges": "node scripts/verify-db-privileges.js",
-    "db:review-memberships": "node scripts/review-memberships.js"
+    "db:review-memberships": "node scripts/review-memberships.js",
+    "test:integration:setup": "node scripts/setup-integration-db.js"
   },
   "keywords": [],
   "type": "commonjs",
@@ -50,5 +51,8 @@
     "bcrypt@6.0.0": true,
     "prisma@7.10.1": true,
     "@prisma/engines@7.10.1": true
+  },
+  "overrides": {
+    "effect": "3.22.5"
   }
 }

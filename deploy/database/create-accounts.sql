@@ -18,9 +18,13 @@ CREATE USER 'mawid_app'@'{{APP_HOST}}' IDENTIFIED BY '{{APP_PASSWORD}}';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `{{DB}}`.* TO 'mawid_app'@'{{APP_HOST}}';
 
 -- 2) Migration account: only the migration job (DATABASE_URL for `prisma migrate deploy`).
---    Schema changes on {{DB}} only; no CREATE DATABASE, no global rights, no GRANT OPTION.
+--    Exactly what the committed migrations use (CREATE TABLE, CREATE INDEX, ALTER TABLE … ADD
+--    COLUMN / ADD CONSTRAINT for foreign keys and CHECKs) plus row access to _prisma_migrations.
+--    No DROP: no migration drops anything; a future migration that needs it gets a temporary,
+--    reviewed GRANT DROP for that rollout only. No CREATE DATABASE, no global rights, no GRANT OPTION.
+--    (REFERENCES is not enforced by MariaDB for foreign keys but is required by MySQL ≥ 8.0.22.)
 CREATE USER 'mawid_migrator'@'{{APP_HOST}}' IDENTIFIED BY '{{MIG_PASSWORD}}';
-GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES ON `{{DB}}`.* TO 'mawid_migrator'@'{{APP_HOST}}';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON `{{DB}}`.* TO 'mawid_migrator'@'{{APP_HOST}}';
 
 -- 3) Optional read-only account for scripts/review-memberships.js and reporting.
 -- CREATE USER 'mawid_readonly'@'{{APP_HOST}}' IDENTIFIED BY '{{RO_PASSWORD}}';
@@ -28,7 +32,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES ON 
 
 -- Verify (read-only):
 --   SHOW GRANTS FOR 'mawid_app'@'{{APP_HOST}}';
---   node scripts/verify-db-privileges.js --env <env file of the app> --db {{DB}}
+--   node scripts/verify-db-privileges.js --env <app env file> --db {{DB}}                     (role app)
+--   node scripts/verify-db-privileges.js --env <migration env file> --db {{DB}} --role migrator
 --
 -- Roll back (removes only these accounts):
 --   DROP USER 'mawid_app'@'{{APP_HOST}}';

@@ -2,7 +2,9 @@
 // Mawid must only ever connect to, migrate or query its own databases: `mawid` or `mawid_<suffix>`.
 // When MAWID_EXPECT_DB is set (the integration-test harness sets it to `mawid_test`), the
 // configured database must be exactly that name — so tests can never fall back to `mawid`.
-const allowedDatabaseName = /^mawid(_[a-z0-9]+)?$/;
+// `mawid`, or `mawid_` followed by lowercase segments (mawid_test, mawid_test_it). Anything else —
+// another project's database, an empty name, uppercase, dashes, `mawidx` — is refused.
+const allowedDatabaseName = /^mawid(?:_[a-z0-9]+)*$/;
 
 function databaseNameFromUrl(url) {
     try {

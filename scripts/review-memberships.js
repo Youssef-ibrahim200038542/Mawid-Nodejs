@@ -37,7 +37,8 @@ function mask(email) {
     if (!fs.existsSync(envFile)) throw new Error(`Env file not found: ${envArg}`);
     const env = dotenv.parse(fs.readFileSync(envFile));
     assertMawidDatabase({ dbName: env.DB_NAME, databaseUrl: env.DATABASE_URL, expected: db });
-    if (env.DB_NAME !== db || databaseNameFromUrl(env.DATABASE_URL) !== db) {
+    // A production app env has no DATABASE_URL (migration credentials are kept out of it).
+    if (env.DB_NAME !== db || (env.DATABASE_URL && databaseNameFromUrl(env.DATABASE_URL) !== db)) {
         throw new Error(`${envArg} does not point at "${db}". Refusing to continue.`);
     }
 

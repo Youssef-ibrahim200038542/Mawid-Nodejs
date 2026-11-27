@@ -1,7 +1,8 @@
 // Account security (H1) against a real database. NOT run by default: the integration harness empties
 // the pinned test database. Run only with the owner's approval, preferably on the dedicated
 // mawid_test_it database:  MAWID_IT=1 npm run test:integration
-const { prisma, resetTestData, createUser, addMember, startServer, stopServer, createClient, waitForEmail, testPassword } = require("./helpers");
+const { prisma, resetTestData, createUser, addMember, createClinicWithMember, startServer, stopServer, createClient, waitForEmail, testPassword } = require("./helpers");
+const { keyedHash } = require("../../src/lib/tokens");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const delivery = require("../../src/modules/auth/auth-delivery");
@@ -69,7 +70,7 @@ test("email verification: valid once, then reused / invalid / expired / supersed
     const since3 = Date.now();
     await late.post("/api/v1/auth/verify-email/resend", { json: {} });
     const lateMail = await waitForEmail("late@example.test", { since: since3 });
-    await prisma.authToken.updateMany({ where: { userId: expiredUser.id, consumedAt: null }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    await prisma.authToken.updateMany({ where: { userId: expiredUser.id, consumedAt: null }, data: { createdAt: new Date(Date.now() - 2 * 86_400_000), expiresAt: new Date(Date.now() - 1000) } });
     assert.equal((await client.post("/api/v1/auth/verify-email", { json: { token: lateMail.token } })).data.error.code, "TOKEN_INVALID", "expired");
 
     const moved = await createUser({ email: "moved@example.test", emailVerifiedAt: null });
@@ -121,8 +122,10 @@ test("password reset: works once, invalidates every session (legacy and SPA), ol
     assert.equal((await resetter.post("/api/v1/auth/password/reset", { json: { token, password: "brand-new-password" } })).status, 204);
     assert.equal((await resetter.post("/api/v1/auth/password/reset", { json: { token, password: "another-password" } })).data.error.code, "TOKEN_INVALID", "single use");
 
-    assert.equal((await spa.get("/api/v1/auth/me")).status, 401, "SPA session revoked");
-    assert.equal((await spa.get("/api/v1/clinics")).data.error.code, "SESSION_REVOKED");
+    const revoked = await spa.get("/api/v1/clinics");
+    assert.equal(revoked.status, 401, "SPA session revoked");
+    assert.equal(revoked.data.error.code, "SESSION_REVOKED");
+    assert.equal((await spa.get("/api/v1/auth/me")).status, 401);
     const page = await legacy.get("/dashboard");
     assert.equal(page.status, 302, "legacy session revoked");
     assert.equal(page.headers.get("location"), "/login");
@@ -137,7 +140,7 @@ test("password reset: works once, invalidates every session (legacy and SPA), ol
     const since2 = Date.now();
     await (await anonymous()).post("/api/v1/auth/password/forgot", { json: { email: user.email } });
     const second = await waitForEmail(user.email, { since: since2, purpose: "PASSWORD_RESET" });
-    await prisma.authToken.updateMany({ where: { userId: user.id, purpose: "PASSWORD_RESET", consumedAt: null }, data: { expiresAt: new Date(Date.now() - 1) } });
+    await prisma.authToken.updateMany({ where: { userId: user.id, purpose: "PASSWORD_RESET", consumedAt: null }, data: { createdAt: new Date(Date.now() - 2 * 3_600_000), expiresAt: new Date(Date.now() - 1) } });
     assert.equal((await resetter.post("/api/v1/auth/password/reset", { json: { token: second.token, password: "x-password-9" } })).data.error.code, "TOKEN_INVALID");
 });
 
@@ -160,9 +163,8 @@ test("sessions created before session versions existed (no sv) keep working", as
 
 async function clinicWithOwner(slug) {
     const owner = await createUser();
+    const clinic = await createClinicWithMember({ slug, userId: owner.id });
     const ownerClient = await apiLogin(owner.email);
-    assert.equal((await ownerClient.post("/api/v1/clinics", { json: { name: `Clinic ${slug}`, slug } })).status, 201);
-    const clinic = await prisma.clinic.findUnique({ where: { slug } });
     return { owner, ownerClient, clinic, P: `/api/v1/clinics/${slug}` };
 }
 
@@ -229,10 +231,15 @@ test("invitations: resend rotates the token, cooldown, revoke, expiry, decline, 
     const since3 = Date.now();
     await ownerClient.post(`${P}/invitations`, { json: { email: invitee.email, role: "RECEPTIONIST" } });
     const third = await waitForEmail(invitee.email, { since: since3 });
-    await prisma.clinicInvitation.updateMany({ where: { email: invitee.email, status: "PENDING" }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    await prisma.clinicInvitation.updateMany({ where: { email: invitee.email, status: "PENDING" }, data: { createdAt: new Date(Date.now() - 8 * 86_400_000), lastSentAt: new Date(Date.now() - 8 * 86_400_000), expiresAt: new Date(Date.now() - 1000) } });
     assert.equal((await inviteeClient.post("/api/v1/invitations/accept", { json: { token: third.token } })).status, 410, "expired");
 
     await prisma.clinicInvitation.updateMany({ where: { email: invitee.email, status: "PENDING" }, data: { lastSentAt: new Date(Date.now() - 120_000) } });
+    // Three emails to this person already went out this hour: the fourth is refused.
+    const limited = await ownerClient.post(`${P}/invitations`, { json: { email: invitee.email, role: "RECEPTIONIST" } });
+    assert.equal(limited.status, 429);
+    assert.equal(limited.data.error.code, "RATE_LIMITED");
+    require("../../src/modules/invitations/invitation.service").recipientQuota.reset();
     const since4 = Date.now();
     await ownerClient.post(`${P}/invitations`, { json: { email: invitee.email, role: "RECEPTIONIST" } });
     const fourth = await waitForEmail(invitee.email, { since: since4 });
@@ -341,7 +348,7 @@ test("per-email rate bucket: 10 concurrent transactions allow exactly the limit"
         Array.from({ length: 10 }, () => prisma.$transaction((tx) => takeEmailQuota(tx, { kind: "PASSWORD_RESET", email: "bucket@example.test", limit: 3, now }), { isolationLevel: "ReadCommitted" }))
     );
     assert.equal(outcomes.filter(Boolean).length, 3);
-    const [bucket] = await prisma.authRateBucket.findMany({ where: { kind: "PASSWORD_RESET" } });
+    const [bucket] = await prisma.authRateBucket.findMany({ where: { kind: "PASSWORD_RESET", keyHash: keyedHash("rate:PASSWORD_RESET", "bucket@example.test") } });
     assert.equal(bucket.requestCount, 10);
     assert.doesNotMatch(bucket.keyHash, /bucket/);
 });

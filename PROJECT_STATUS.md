@@ -10,13 +10,13 @@ Mawid (موعد) is a multi-tenant clinic management and appointment booking pla
 
 | Finding | Status |
 |---|---|
-| **H1** account takeover via unverified email + add-by-email | **Fixed in code.** Email verification, invitations accepted by the verified invitee, password reset, session versions, legacy-membership re-confirmation, doctor bookability. See `docs/architecture/07-account-security.md`. Unit-tested and browser-verified with new accounts on `mawid_test`; integration tests written, not run. |
-| **H2** root DB account on a server shared with another project | **Prepared, not applied.** Least-privilege accounts script, startup refusal of root / broad grants / migration credentials in production, read-only verifier. The accounts themselves must be created by a DBA (server-level change); locally the app still connects as root, and the verifier reports FAIL. |
+| **H1** account takeover via unverified email + add-by-email | **Fixed and verified.** Email verification, invitations accepted by the verified invitee, password reset, session versions, legacy-membership re-confirmation, Super Admin bootstrap, doctor bookability. See `docs/architecture/07-account-security.md`. Unit 103/103, integration 90/90 (twice, on `mawid_test_it`), browser-verified with new accounts on `mawid_test`. |
+| **H2** root DB account on a server shared with another project | **Prepared, not applied.** `mawid_app` (data only) / `mawid_migrator` (CREATE, ALTER, INDEX, REFERENCES — no DROP; proven sufficient by a test over all migrations) script; production refuses root, broad grants and migration credentials in the app; read-only verifier with `--role app|migrator`. Accounts must be created by a DBA (server-level change). Locally the app still connects as root (verifier: FAIL). |
 | **H3** no production deployment path | **Prepared.** Express serves the built SPA (`SERVE_WEB=1`), explicit CSP, HTTPS enforcement, `__Host-` cookie, health/readiness endpoints, SMTP provider, deployment / backup / monitoring / smoke-test docs (`docs/operations/deployment.md`). Not deployed; SMTP untested without credentials. |
 | M2 legacy login CSRF | Closed in production mode (legacy auth forms are not mounted with `SERVE_WEB=1`). |
 | M1 email enumeration via member add | Closed (invitations answer the same either way). |
 | M3 / L3 in-memory rate limits | Still per process; per-email limits and cooldowns are now in the database. |
-| L5 vulnerable unused deps | `express-mysql-session` / `mysql2` removed. Remaining audit finding: `effect` inside the Prisma CLI (build-time tool). |
+| L5 vulnerable deps | `express-mysql-session` / `mysql2` removed; `effect` (Prisma CLI) pinned to the fixed 3.22.5 via `overrides`. `npm audit --omit=dev`: **0**. Dev-only: 2 moderate (`minimatch` via `nodemon`). |
 
 ## 1. Architecture
 
@@ -100,8 +100,8 @@ Permissions are enforced by the API on every request. The web app only mirrors t
 
 | Suite | Command | Result |
 |---|---|---|
-| Unit tests (no database reachable — `tests/unit-env.js`) | `npm test` | **101 / 101 passing** (2026-11-27) |
-| Integration tests | `npm run test:integration` | **Not run since H1** (they empty their database). Updated + new account-security suite written. Last run before H1: 77 / 77. Run only with approval, preferably `MAWID_IT=1` on a dedicated `mawid_test_it`. |
+| Unit tests (no database reachable — `tests/unit-env.js`) | `npm test` | **103 / 103 passing** (2026-11-27) |
+| Integration tests (disposable `mawid_test_it` only) | `npm run test:integration` | **90 / 90 passing** (2026-11-27, two consecutive runs; fresh database migrated 0 → 6 cleanly). `mawid_test` and `mawid` verified unchanged afterwards. |
 | Web app typecheck + production build | `npm run web:build` | **passing** |
 
 The integration tests cover:

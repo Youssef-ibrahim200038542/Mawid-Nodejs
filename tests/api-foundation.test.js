@@ -100,6 +100,11 @@ test("db guard refuses any database other than mawid / mawid_*", () => {
     assert.throws(() => assertMawidDatabase({ dbName: "mawid", databaseUrl: "mysql://root@h/mawid_test" }), /different/);
     assert.doesNotThrow(() => assertMawidDatabase({ dbName: "mawid", databaseUrl: "mysql://root@127.0.0.1:3306/mawid" }));
     assert.doesNotThrow(() => assertMawidDatabase({ dbName: "mawid_test" }));
+    assert.doesNotThrow(() => assertMawidDatabase({ dbName: "mawid_test_it" }));
+    for (const name of ["mawidx", "mawid_", "mawid__x", "mawid-test", "Mawid", "x_mawid", "mawid_test;drop", "car_rental", "mysql"]) {
+        assert.throws(() => assertMawidDatabase({ dbName: name }), /refusing/, name);
+    }
+    assert.throws(() => assertMawidDatabase({ dbName: "mawid_test", expected: "mawid_test_it" }), /pinned/);
 });
 
 test("error handler exposes AppError code, message and details on the API", () => {

@@ -87,6 +87,7 @@ function smtpTransporter() {
             secure: process.env.SMTP_SECURE === "true",
             requireTLS: process.env.SMTP_SECURE !== "true",
             auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : undefined,
+            tls: { minVersion: "TLSv1.2", rejectUnauthorized: true },
             connectionTimeout: 7000,
             greetingTimeout: 7000,
             socketTimeout: 7000,

@@ -17,8 +17,15 @@ async function assertConnectedToTestDatabase() {
 // Empties Mawid's tables inside the pinned test database only, children before parents.
 // No TRUNCATE/DROP. clinic_members ↔ clinic_invitations reference each other (RESTRICT), so the
 // trust link is cleared first (back to LEGACY_UNREVIEWED, which the CHECK constraint allows).
+// Destructive: only the dedicated, disposable integration database may be emptied. `mawid_test`
+// holds the owner's manual browser-test data and is refused unless MAWID_ALLOW_RESET_MAWID_TEST=1
+// is set explicitly for that run.
+const RESETTABLE_DATABASE = "mawid_test_it";
 async function resetTestData() {
-    await assertConnectedToTestDatabase();
+    const db = await assertConnectedToTestDatabase();
+    if (db !== RESETTABLE_DATABASE && !(db === "mawid_test" && process.env.MAWID_ALLOW_RESET_MAWID_TEST === "1")) {
+        throw new Error(`Refusing to empty "${db}": integration tests only reset "${RESETTABLE_DATABASE}". Run them with npm run test:integration.`);
+    }
     await prisma.$transaction([
         prisma.clinicMember.updateMany({ data: { trustState: "LEGACY_UNREVIEWED", trustSource: null, trustedAt: null, trustedViaInvitationId: null } }),
         prisma.authToken.deleteMany(),

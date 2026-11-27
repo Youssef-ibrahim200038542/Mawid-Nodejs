@@ -5,16 +5,16 @@ const { assertMawidDatabase } = require("../../src/config/db-guard");
 
 test.after(() => prisma.$disconnect());
 
-test("the live connection is mawid_test", async () => {
-    assert.equal(TEST_DATABASE, "mawid_test");
-    assert.equal(await assertConnectedToTestDatabase(), "mawid_test");
-    assert.equal(process.env.DB_NAME, "mawid_test");
-    assert.equal(new URL(process.env.DATABASE_URL).pathname, "/mawid_test");
+test("the live connection is the pinned test database", async () => {
+    assert.ok(["mawid_test", "mawid_test_it"].includes(TEST_DATABASE));
+    assert.equal(await assertConnectedToTestDatabase(), TEST_DATABASE);
+    assert.equal(process.env.DB_NAME, TEST_DATABASE);
+    assert.equal(new URL(process.env.DATABASE_URL).pathname, `/${TEST_DATABASE}`);
 });
 
 test("this run is pinned: the guard rejects the production mawid database", () => {
-    assert.equal(process.env.MAWID_EXPECT_DB, "mawid_test");
-    assert.throws(() => assertMawidDatabase({ dbName: "mawid" }), /pinned to "mawid_test"/);
+    assert.equal(process.env.MAWID_EXPECT_DB, TEST_DATABASE);
+    assert.throws(() => assertMawidDatabase({ dbName: "mawid" }), new RegExp(`pinned to "${TEST_DATABASE}"`));
     assert.throws(() => assertMawidDatabase({ databaseUrl: "mysql://root@127.0.0.1:3306/mawid" }), /pinned/);
     assert.throws(() => assertMawidDatabase({ dbName: "car_rental" }), /refusing/);
 });

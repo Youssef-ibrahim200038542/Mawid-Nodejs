@@ -1,30 +1,55 @@
-# Example reverse proxy for Mawid (one origin: SPA + API + legacy pages from the Node process).
-# TLS certificates: e.g. Let's Encrypt. Replace mawid.example with the real domain.
+# Example reverse proxy for Mawid (one origin: SPA + API + legacy pages from one Node process).
+# TLS certificates: e.g. Let's Encrypt (certbot). Replace mawid.example with the real domain.
+# The app sets HSTS, CSP and the other security headers itself; nginx terminates TLS, compresses
+# and forwards. Test: `nginx -t` before reloading.
+
+server_tokens off;
+
+upstream mawid_app {
+    server 127.0.0.1:3000;
+    keepalive 16;
+}
 
 server {
     listen 80;
+    listen [::]:80;
     server_name mawid.example;
-    # Health checks may stay on HTTP inside the private network; everything else goes to HTTPS.
-    location = /healthz { proxy_pass http://127.0.0.1:3000; }
     location / { return 301 https://$host$request_uri; }
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name mawid.example;
 
     ssl_certificate     /etc/letsencrypt/live/mawid.example/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/mawid.example/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:mawid_tls:10m;
 
-    client_max_body_size 128k;   # the app itself limits JSON to 100 kB and forms to 20 kB
+    client_max_body_size 128k;      # the app limits JSON to 100 kB and forms to 20 kB
+    client_body_timeout 15s;
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types text/css application/javascript application/json image/svg+xml text/plain;
+
+    # Health checks stay reachable for the uptime monitor; they return only {"status": …}.
+    location = /readyz { proxy_pass http://mawid_app; access_log off; }
+    location = /healthz { proxy_pass http://mawid_app; access_log off; }
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://mawid_app;
         proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;   # the app trusts exactly one proxy (TRUST_PROXY=1)
+        # Overwrite (do not append to) any client-supplied X-Forwarded-For: the app trusts exactly
+        # one proxy hop (TRUST_PROXY=1), so this is the client address it will use for rate limits.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
         proxy_read_timeout 30s;
     }
 }

@@ -106,6 +106,7 @@ function takeRecipientQuota(clinicId, email) {
 }
 
 // The single cooldown + rotation used by every (re)send path. Caller holds clinic + invitation locks.
+// The per-recipient quota is only taken once an email will really be sent (after the cooldown check).
 async function rotate(tx, invitation, now, extra = {}) {
     const elapsed = now.getTime() - invitation.lastSentAt.getTime();
     if (elapsed < COOLDOWN_MS && invitation.deliveryStatus !== "FAILED") {
@@ -113,6 +114,7 @@ async function rotate(tx, invitation, now, extra = {}) {
             retryAfterSeconds: Math.ceil((COOLDOWN_MS - elapsed) / 1000),
         });
     }
+    takeRecipientQuota(invitation.clinicId, extra.email || invitation.email);
     const token = generateToken();
     await tx.clinicInvitation.update({
         where: { id: invitation.id },
@@ -171,7 +173,6 @@ function jobFor(invitation, raw, clinic) {
 }
 
 async function createInvitation(tenant, { input, ipAddress }) {
-    takeRecipientQuota(tenant.clinicId, input.email);
     const result = await prisma.$transaction(async (tx) => {
         const now = new Date();
         const clinic = await lockClinic(tx, tenant.clinicId);
@@ -192,6 +193,7 @@ async function createInvitation(tenant, { input, ipAddress }) {
             raw = await rotate(tx, existing, now, { role: input.role });
             invitationId = existing.id;
         } else {
+            takeRecipientQuota(clinic.id, input.email);
             const token = generateToken();
             const created = await tx.clinicInvitation.create({
                 data: {
@@ -239,9 +241,6 @@ async function listInvitations(tenant) {
 }
 
 async function resendInvitation(tenant, invitationId, { ipAddress }) {
-    const current = await prisma.clinicInvitation.findFirst({ where: { id: invitationId, clinicId: tenant.clinicId }, select: { email: true } });
-    if (!current) throw notFound();
-    takeRecipientQuota(tenant.clinicId, current.email);
     const result = await prisma.$transaction(async (tx) => {
         const now = new Date();
         const clinic = await lockClinic(tx, tenant.clinicId);
@@ -313,9 +312,6 @@ async function lockMember(tx, clinicId, memberId) {
 // Owner (trusted, members:manage) or verified Super Admin bootstrap (asAdmin) asks a legacy member
 // to re-confirm. Neither can grant trust: only the member accepting the emailed link does.
 async function requestReconfirmation({ clinicId, memberId, actorUserId, ipAddress, asAdmin = false }) {
-    const target = await prisma.clinicMember.findFirst({ where: { id: memberId, clinicId }, select: { user: { select: { email: true } } } });
-    if (!target) throw notFound();
-    takeRecipientQuota(clinicId, target.user.email);
     const result = await prisma.$transaction(async (tx) => {
         const now = new Date();
         const clinic = await lockClinic(tx, clinicId);
@@ -341,6 +337,7 @@ async function requestReconfirmation({ clinicId, memberId, actorUserId, ipAddres
             raw = await rotate(tx, existing, now, { email: member.email, role: member.role });
             invitationId = existing.id;
         } else {
+            takeRecipientQuota(clinicId, member.email);
             const token = generateToken();
             const created = await tx.clinicInvitation.create({
                 data: {

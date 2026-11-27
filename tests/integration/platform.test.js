@@ -144,7 +144,8 @@ test("an online booking notifies the clinic staff, not the patient who made it",
 
     const rows = await prisma.notification.findMany({ where: { appointmentId: ids.appointment }, select: { userId: true, type: true, emailStatus: true, payload: true } });
     assert.deepEqual(rows.map((r) => r.userId).sort(), [users.owner.id, users.receptionist.id, users.doctor.id].sort());
-    assert.ok(rows.every((r) => r.type === "APPOINTMENT_BOOKED" && r.emailStatus === "SKIPPED"));
+    // Integration runs use the in-memory email provider, so staff emails are queued (PENDING) / SENT.
+    assert.ok(rows.every((r) => r.type === "APPOINTMENT_BOOKED" && ["PENDING", "SENT"].includes(r.emailStatus)));
     assert.equal(rows[0].payload.clinic.slug, "plat-p");
     assert.equal(rows[0].payload.audience, "staff");
 });

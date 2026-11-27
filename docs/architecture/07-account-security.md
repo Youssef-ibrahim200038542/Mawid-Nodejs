@@ -136,6 +136,7 @@ only in memory while a message is built and handed to the provider.
 ## Tests
 - Unit (run): `tests/account-security.test.js`, `tests/production-config.test.js`, updated
   `tests/auth.controller.test.js`, `tests/tenancy.test.js`.
-- Integration (written, **not run** — the harness empties its database): `tests/integration/account-security.test.js`
-  plus updated `auth.test.js` / `platform.test.js`. Run only with approval, preferably on the dedicated
-  `mawid_test_it` database: `MAWID_IT=1 npm run test:integration` (needs `.env.test-it`).
+- Integration (**90 / 90 passing**, 2026-11-27, twice): `tests/integration/account-security.test.js` plus updated
+  `auth.test.js` / `platform.test.js`. They run only against the dedicated, disposable `mawid_test_it`:
+  `node scripts/setup-integration-db.js --create` once, then `npm run test:integration`
+  (`helpers.resetTestData` refuses to empty any other database).

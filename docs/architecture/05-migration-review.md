@@ -18,8 +18,21 @@ Checked automatically across all five files:
 - Checksums recorded in `mawid_test._prisma_migrations` equal the SHA-256 of the committed files (`3eb6bc…`, `33dcff…`, `7d6ca6…`, `5e7281…`, `969431…`).
 - After applying all five, `migrate diff` (live `mawid_test` → `schema.prisma`) is empty, so the migrations fully describe the schema.
 - `mawid_test` was created empty and migrated 1 → 5 in order, so a clean replay of the whole chain is proven.
+- 2026-11-27: a brand-new empty `mawid_test_it` was migrated 1 → 6 in one `migrate deploy` run without errors, then passed the full integration suite (90/90) — the complete chain including `account_security` replays cleanly. (Run as the local development account; the reduced `mawid_migrator` grant set is derived from the statements and still has to be exercised once the account exists.)
 
 Migration 6 (H1, see `07-account-security.md`): `ADD COLUMN` only, with defaults that keep every existing row valid (no backfill needed). Every existing membership becomes `LEGACY_UNREVIEWED` — by design, it must be re-confirmed (§4a). The CHECK constraints avoid columns that carry a CASCADE / SET NULL foreign-key action. Read-only status on `mawid` (2026-11-27): migrations 3–6 pending; `mawid` has 1 user, 0 clinics, 0 memberships.
+
+### 1a. Risk per pending migration (checked 2026-11-27; a unit test asserts every committed migration contains only CREATE TABLE / CREATE INDEX / ALTER TABLE … ADD)
+
+| Migration | Schema changes | Modifies existing rows? | Drops / renames? | Reversible | Downtime | Backup first | Locking on `mawid` |
+|---|---|---|---|---|---|---|---|
+| `…140000_clinic_operations` | 7 new tables, FKs to `clinics` / `clinic_members`, CHECKs | no | no | yes — drop the 7 new (empty) tables | none needed; run with the app stopped or on the old code (it doesn't use the tables) | yes | metadata locks on `clinics`, `clinic_members` while FKs are added (both empty on `mawid`) — milliseconds |
+| `…160000_appointments` | `patients`, `appointments` + FKs (incl. `users`), CHECKs | no | no | yes — drop the 2 new tables | none | yes | short metadata lock on `users` (1 row) |
+| `…180000_notifications` | `notifications` + FKs | no | no | yes — drop the table | none | yes | short metadata lock on `users`, `clinics` |
+| `…120000_account_security` (H1) | `users` +2 columns, `clinic_members` +4 columns, +1 unique index, 3 new tables, FKs, CHECKs | **no data rewrite**; existing rows take the column defaults (`email_verified_at` NULL, `session_version` 0, `trust_state` LEGACY_UNREVIEWED) | no | app rollback needs no schema change (old code ignores the new columns); schema removal = drop 3 tables + 6 columns (destructive, approval) | **deploy app + migration together**: the new code needs the columns, the old code tolerates them. MariaDB 10.4 adds columns with defaults in place (INSTANT for trailing nullable/defaulted columns); with CHECK constraints the `ALTER TABLE` on `users` / `clinic_members` may copy the table — tiny tables on `mawid` (1 / 0 rows), so seconds at most | **yes (mandatory)** | `ALTER TABLE users` / `clinic_members` take a metadata lock for the copy; sessions/logins pause briefly. Run in a quiet window. |
+
+Because MariaDB DDL is not transactional, a failure part-way leaves a partly applied migration that
+Prisma marks failed; inspect it, finish or roll back from the backup — never `migrate reset`.
 
 ## 2. What the pending migrations do to `mawid`
 

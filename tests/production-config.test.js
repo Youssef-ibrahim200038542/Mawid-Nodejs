@@ -19,10 +19,41 @@ test("grant parser accepts exactly data privileges on the app's own database", (
     assert.deepEqual(grantProblems(ok, "mawid"), []);
     assert.deepEqual(grantProblems(["GRANT ALL PRIVILEGES ON *.* TO `root`@`localhost` WITH GRANT OPTION"], "mawid"), ["global privileges: ALL PRIVILEGES"]);
     assert.deepEqual(grantProblems(["GRANT SELECT ON `car_rental`.* TO `mawid_app`@`localhost`"], "mawid"), ["privileges on another database: car_rental"]);
-    assert.deepEqual(grantProblems(["GRANT SELECT, DROP, CREATE ON `mawid`.* TO `mawid_app`@`localhost`"], "mawid"), ["more than data privileges on mawid: DROP, CREATE"]);
+    assert.deepEqual(grantProblems(["GRANT SELECT, DROP, CREATE ON `mawid`.* TO `mawid_app`@`localhost`"], "mawid"), ["more than the allowed privileges on mawid: DROP, CREATE"]);
     assert.deepEqual(grantProblems(["GRANT SELECT ON `mawid`.* TO `mawid_app`@`localhost` WITH GRANT OPTION"], "mawid"), ["GRANT OPTION on mawid"]);
     assert.deepEqual(grantProblems(["GRANT PROXY ON ''@'%' TO 'root'@'localhost' WITH GRANT OPTION"], "mawid"), ["PROXY grant"]);
     assert.deepEqual(grantProblems(["GRANT SELECT ON `mawid`.`users` TO `mawid_app`@`localhost`"], "mawid"), []);
+});
+
+test("deploy/database/create-accounts.sql grants exactly what the checker allows, on the Mawid database only", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const { RUNTIME_PRIVILEGES, MIGRATOR_PRIVILEGES } = require("../src/config/db-privileges");
+    const sql = fs.readFileSync(path.join(__dirname, "..", "deploy", "database", "create-accounts.sql"), "utf8");
+    const grants = [...sql.matchAll(/^GRANT\s+(.+?)\s+ON\s+(\S+)\s+TO\s+'([^']+)'/gim)].map((m) => ({ privileges: m[1].split(",").map((p) => p.trim()), target: m[2], user: m[3] }));
+    const byUser = Object.fromEntries(grants.map((g) => [g.user, g]));
+    assert.deepEqual(new Set(byUser.mawid_app.privileges), RUNTIME_PRIVILEGES);
+    assert.deepEqual(new Set(byUser.mawid_migrator.privileges), MIGRATOR_PRIVILEGES);
+    assert.ok(!byUser.mawid_migrator.privileges.includes("DROP"), "no DROP for the migrator");
+    for (const g of grants) assert.equal(g.target, "`{{DB}}`.*", "database-level grant on the Mawid database only");
+    assert.doesNotMatch(sql.replace(/^--.*$/gm, ""), /\*\.\*|WITH GRANT OPTION|ALL PRIVILEGES|car_rental/i);
+    // The checker accepts these exact grants.
+    assert.deepEqual(grantProblems(["GRANT USAGE ON *.* TO `mawid_migrator`@`localhost`", "GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON `mawid`.* TO `mawid_migrator`@`localhost`"], "mawid", MIGRATOR_PRIVILEGES), []);
+    assert.deepEqual(grantProblems(["GRANT SELECT, DROP ON `mawid`.* TO `mawid_migrator`@`localhost`"], "mawid", MIGRATOR_PRIVILEGES), ["more than the allowed privileges on mawid: DROP"]);
+});
+
+test("every committed migration only uses statements the migrator account is allowed to run", () => {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const dir = path.join(__dirname, "..", "prisma", "migrations");
+    for (const name of fs.readdirSync(dir).filter((d) => fs.statSync(path.join(dir, d)).isDirectory())) {
+        const sql = fs.readFileSync(path.join(dir, name, "migration.sql"), "utf8").replace(/--.*$/gm, "");
+        const statements = sql.split(";").map((s) => s.trim()).filter(Boolean);
+        for (const statement of statements) {
+            assert.match(statement, /^(CREATE TABLE|CREATE (UNIQUE )?INDEX|ALTER TABLE `[a-z_]+` (ADD (COLUMN|CONSTRAINT)|ADD COLUMN[\s\S]*))/i, `${name}: unexpected statement: ${statement.slice(0, 60)}`);
+            assert.doesNotMatch(statement, /\bDROP\b|\bRENAME\b|\bMODIFY\b|\bTRUNCATE\b/i, `${name}: destructive statement`);
+        }
+    }
 });
 
 test("production refuses root, weak passwords and migration credentials in the app process", () => {

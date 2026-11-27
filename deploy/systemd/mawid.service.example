@@ -1,9 +1,14 @@
-# Example systemd unit for the Mawid Node process (Linux). Secrets live in /etc/mawid/mawid.env
-# (mode 0600, owned by root, readable by the service via EnvironmentFile) — never in the repository.
+# Example systemd unit for the Mawid Node process (Linux).
+# Secrets live in /etc/mawid/mawid.env (mode 0600, owner root) — never in the repository. It must
+# contain the RUNTIME account (DB_USER=mawid_app) and must NOT contain DATABASE_URL (the app refuses
+# to start with migration credentials). Logs go to journald (rotation: journald.conf SystemMaxUse).
+# Run exactly ONE instance: the IP/user rate limiters are in memory (per process).
 [Unit]
 Description=Mawid clinic booking (API + web app)
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -14,13 +19,18 @@ EnvironmentFile=/etc/mawid/mawid.env
 ExecStart=/usr/bin/node src/index.js
 Restart=on-failure
 RestartSec=5
-# Graceful shutdown: the app stops taking deliveries and drains in-flight email sends (~10 s).
+# Graceful shutdown: stops claiming deliveries, drains in-flight email sends (~10 s), closes the pool.
 KillSignal=SIGTERM
 TimeoutStopSec=15
+LimitNOFILE=8192
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 ReadWritePaths=/opt/mawid/var
 
 [Install]
