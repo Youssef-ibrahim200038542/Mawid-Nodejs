@@ -45,7 +45,7 @@ Mawid (موعد) is a multi-tenant clinic management and appointment booking pla
                        analytics · admin
     views/             legacy server-rendered pages (events feature, kept as is)
   prisma/              schema + ordered migrations
-  tests/               unit tests and integration tests (mawid_test only)
+  tests/               unit tests and integration tests (mawid_test_it only)
   scripts/             test DB migration, dev servers, reminders, admin bootstrap
 web/                   React single-page application (Vite)
 docs/                  architecture, migration review, design direction, frontend
@@ -172,7 +172,7 @@ Pending on `mawid` (additive only):
 
 Safeguards:
 - A database guard refuses any database not named `mawid` / `mawid_*`.
-- Integration tests are pinned to `mawid_test` and verify the live database name before every operation.
+- Integration tests are pinned to the disposable `mawid_test_it` and verify the live database name before every operation.
 - Prisma CLI commands that write (migrate deploy / dev / reset, db push / execute) are refused against `mawid` unless explicitly allowed for an approved rollout.
 - Strict SQL mode and UTC are set per session on Mawid's own connections only. Global server settings are unchanged.
 
@@ -203,7 +203,7 @@ The ordered rollout plan, risks and back-out procedure are in `docs/architecture
 ```bash
 npm install && npm --prefix web install
 npm test                    # unit tests
-npm run test:integration    # integration tests (empties mawid_test)
+npm run test:integration    # integration tests (empties the disposable mawid_test_it only)
 npm run dev:test-db         # API on :3100 against mawid_test
 npm run web:dev             # web app on :5173 (emails go to var/mail-outbox/)
 ```

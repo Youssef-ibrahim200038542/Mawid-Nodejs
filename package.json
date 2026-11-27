@@ -1,7 +1,7 @@
 {
-  "name": "nodejs-learning",
+  "name": "mawid",
   "version": "1.0.0",
-  "description": "",
+  "description": "Multi-tenant clinic management and online appointment booking (Express, Prisma, MariaDB, React)",
   "main": "index.js",
   "scripts": {
     "dev": "prisma generate && nodemon src/index.js",
